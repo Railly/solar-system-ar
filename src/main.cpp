@@ -2,12 +2,14 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 
 #include "shader.hpp"
 #include "mesh.hpp"
 #include "texture.hpp"
 #include "object.hpp"
 #include "scene.hpp"
+#include "ar_tracker.hpp"
 
 #include "imgui_layer.hpp"
 #include "ui_panel.hpp"
@@ -25,8 +27,29 @@ void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
 
 static const char *FSHADER = R"(
 #version 410 core
+in vec2 vUV; 
+uniform sampler2D tex; 
+uniform float uAlpha;
+out vec4 FragColor;
+void main(){ 
+  FragColor = texture(tex, vUV);
+  FragColor.a *= uAlpha;
+}
+)";
+
+// Background shaders (for AR camera feed)
+static const char *BG_VSHADER = R"(
+#version 410 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUV;
+out vec2 vUV;
+void main(){ vUV=aUV; gl_Position=vec4(aPos,0.0,1.0); }
+)";
+
+static const char *BG_FSHADER = R"(
+#version 410 core
 in vec2 vUV; uniform sampler2D tex; out vec4 FragColor;
-void main(){ FragColor = texture(tex, vUV); }
+void main(){ FragColor = texture(tex, vec2(vUV.x, 1.0-vUV.y)); }
 )";
 
 int main()
@@ -37,14 +60,31 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "Sun-Earth-Moon", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System", nullptr, nullptr);
   if (!win)
     return -1;
   glfwMakeContextCurrent(win);
   gladLoadGL();
 
   Shader shader(VSHADER, FSHADER);
+  Shader bgShader(BG_VSHADER, BG_FSHADER);
   Mesh sphere = Mesh::sphere();
+
+  // Create background quad for AR camera feed
+  GLuint bgVAO, bgVBO;
+  float quad[16] = {
+      // pos      // uv
+      -1, -1, 0, 0, 1, -1, 1, 0,
+      1, 1, 1, 1, -1, 1, 0, 1};
+  glGenVertexArrays(1, &bgVAO);
+  glBindVertexArray(bgVAO);
+  glGenBuffers(1, &bgVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, bgVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
+  glEnableVertexAttribArray(1);
 
   Object sun{sphere, Texture("assets/sun.jpg")};
   sun.spinSpeed = glm::radians(14.f); // arbitrary
@@ -73,28 +113,60 @@ int main()
   ui::ImGuiLayer gui;
   gui.init(win);
 
+  ARTracker ar;
   bool showUI = true;
+  static float alpha = 0.0f;  // for smooth fade in/out
 
   while (!glfwWindowShouldClose(win))
   {
     double now = glfwGetTime();
     float dt = static_cast<float>(now - last);
     last = now;
-    gui.begin();
+    
+    ar.grabFrame(); // updates V, P + bg texture
 
+    // Smooth fade in/out based on marker visibility
+    alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
+                               : std::max(alpha - dt * 4.0f, 0.0f);
+
+    gui.begin();
     drawOrbitalPanel(sun, earth, moon, &showUI);
+    
+    // Debug feedback when no marker detected
+    if (!ar.markerVisible()) {
+      ImGui::Begin("AR Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+      ImGui::TextColored(ImVec4(1, 0, 0, 1), "🎯 Point camera at ArUco marker");
+      ImGui::Text("Marker ID: 0 (DICT_6X6_250)");
+      ImGui::End();
+    }
 
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glm::mat4 P = glm::perspective(glm::radians(45.f), float(w) / h, 0.1f, 50.f);
-    glm::mat4 V = glm::lookAt(glm::vec3(0, 2, 8), glm::vec3(0), glm::vec3(0, 1, 0));
-    glm::mat4 VP = P * V;
+    // ---- draw background quad (always) ----
+    bgShader.use();
+    glBindTexture(GL_TEXTURE_2D, ar.backgroundTex());
+    glBindVertexArray(bgVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glEnable(GL_DEPTH_TEST);
 
-    scene.update(dt, static_cast<float>(now));
-    scene.draw(shader, VP);
+    // ---- update & draw solar system (with fade effect) ----
+    if (alpha > 0.01f) {  // only draw if visible enough
+      scene.update(dt, static_cast<float>(now));
+      
+      // Enable alpha blending for fade effect
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      
+      shader.use();
+      glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
+      scene.draw(shader, ar.proj() * ar.view());
+      
+      glDisable(GL_BLEND);
+    }
 
     gui.end();
     glfwSwapBuffers(win);
