@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/opt/homebrew/opt/opencv/include/opencv4",
+                "/opt/homebrew/Cellar/glfw/3.4/include",
+                "/opt/homebrew/Cellar/glm/1.0.1/include",
+                "${workspaceFolder}/external/glad/include",
+                "${workspaceFolder}/external/stb",
+                "${workspaceFolder}/external/imgui",
+                "${workspaceFolder}/external/imgui/backends"
+            ],
+            "defines": [
+                "GL_SILENCE_DEPRECATION",
+                "IMGUI_IMPL_OPENGL_LOADER_GLAD"
+            ],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-arm64"
+        }
+    ],
+    "version": 4
+}
