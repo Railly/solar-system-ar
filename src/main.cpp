@@ -37,7 +37,7 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "Sun-Earth", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "Sun-Earth-Moon", nullptr, nullptr);
   if (!win)
     return -1;
   glfwMakeContextCurrent(win);
@@ -55,13 +55,12 @@ int main()
   earth.orbitRadius = 4.0f;
   earth.orbitSpeed = glm::radians(360.f / 365.f);
 
-  // Mesh y textures ya existentes
   Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.073f)); // radio ~ 0.27 Tierra
-  moon.spinSpeed = glm::radians(360.f / 27.3f);                // sincrónica ≈ igual a traslación
-  moon.orbitRadius = 0.5f;                                     // escala de tu escena
-  moon.orbitSpeed = glm::radians(360.f / 27.3f);               // 27.3 d ≈ 1 mes sideral
-  moon.orbitTarget = &earth;                                   // ¡clave!
+  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.073f)); // radius ~ 0.27 Earth
+  moon.spinSpeed = glm::radians(360.f / 27.3f);                // synchronous ≈ equal to translation
+  moon.orbitRadius = 0.5f;                                     // scale of your scene
+  moon.orbitSpeed = glm::radians(360.f / 27.3f);               // 27.3 d ≈ 1 sidereal month
+  moon.orbitTarget = &earth;                                   // key!
 
   Scene scene;
   scene.add(&sun);
@@ -83,7 +82,7 @@ int main()
     last = now;
     gui.begin();
 
-    drawOrbitalPanel(sun, earth, &showUI);
+    drawOrbitalPanel(sun, earth, moon, &showUI);
 
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
