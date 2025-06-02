@@ -10,7 +10,6 @@
 #include "mesh.hpp"
 #include "texture.hpp"
 #include "object.hpp" 
-#include "scene.hpp"
 #include "logger.hpp"
 
 #include <iostream>
@@ -35,7 +34,7 @@ void main(){ FragColor = texture(tex, vUV); }
 
 int main()
 {
-  LOG_INF("Starting Solar System - Step 3: Hierarchical Orbits");
+  LOG_INF("Starting Solar System - Step 2: Sun Texture & Rotation");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -43,7 +42,7 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "Solar System - Hierarchical Orbits", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "Solar System - Sun Texture", nullptr, nullptr);
   if (!win)
     return -1;
   glfwMakeContextCurrent(win);
@@ -52,37 +51,17 @@ int main()
   Shader shader(VSHADER, FSHADER);
   Mesh sphere = Mesh::sphere();
 
-  // Solar system objects
+  // Single Sun object
   Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.localScale = glm::vec3(0.6f);  // Large sun
-  sun.spinSpeed = glm::radians(5.f);  // Very slow rotation
-
-  Object earth{sphere, Texture("assets/earth.jpg")};  
-  earth.localScale = glm::vec3(0.25f);  // Medium earth
-  earth.spinSpeed = glm::radians(30.f);  // Moderate rotation
-  earth.orbitRadius = 1.5f;  // Distance from sun
-  earth.orbitSpeed = glm::radians(8.f);  // Slower orbital speed
-  earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // Slightly tilted orbit
-
-  Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.localScale = glm::vec3(0.08f);  // Small moon  
-  moon.spinSpeed = glm::radians(20.f);  // Moderate rotation
-  moon.orbitRadius = 0.6f;  // Much farther from earth - no collision!
-  moon.orbitSpeed = glm::radians(25.f);  // Faster than Earth but not crazy
-  moon.orbitTarget = &earth;  // *** CRITICAL: Moon orbits Earth, not Sun ***
-  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // Same inclination
-
-  Scene scene;
-  scene.add(&sun);
-  scene.add(&earth);
-  scene.add(&moon);
+  sun.localScale = glm::vec3(1.0f);  // Normal size
+  sun.spinSpeed = glm::radians(30.f);  // Visible but not too fast rotation
 
   glEnable(GL_DEPTH_TEST);
   glClearColor(0.02f, 0.02f, 0.1f, 1.0f);  // Dark space background
 
   double last = glfwGetTime();
   
-  LOG_INF("Solar system initialized - Sun, Earth (orbiting Sun), Moon (orbiting Earth)");
+  LOG_INF("Sun initialized - textured sphere with rotation");
 
   while (!glfwWindowShouldClose(win))
   {
@@ -90,21 +69,18 @@ int main()
     float dt = static_cast<float>(now - last);
     last = now;
 
-    // Time scale factor to slow everything down
-    const float TIME_SCALE = 0.3f;  // 30% speed - much more observable
-    
-    // Update orbital mechanics with time scaling
-    scene.update(dt * TIME_SCALE, static_cast<float>(now) * TIME_SCALE);
+    // Update Sun rotation
+    sun.update(dt, static_cast<float>(now));
 
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Camera setup - view from a fixed perspective
+    // Camera setup - close view of the Sun
     glm::mat4 view = glm::lookAt(
-      glm::vec3(3.0f, 2.0f, 3.0f),  // Camera position
-      glm::vec3(0.0f, 0.0f, 0.0f),  // Look at origin (sun)
+      glm::vec3(0.0f, 0.0f, 3.0f),  // Camera closer to see texture detail
+      glm::vec3(0.0f, 0.0f, 0.0f),  // Look at Sun (origin)
       glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
     );
     
@@ -116,11 +92,9 @@ int main()
     
     glm::mat4 VP = proj * view;
 
-    // Render all objects
+    // Render the Sun
     shader.use();
     sun.draw(shader, VP);
-    earth.draw(shader, VP);
-    moon.draw(shader, VP);
 
     glfwSwapBuffers(win);
     glfwPollEvents();

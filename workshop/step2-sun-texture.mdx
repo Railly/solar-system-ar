@@ -1,0 +1,233 @@
+---
+id: "step2-sun-texture"
+tag: "v2-sun-texture"
+title: "Malla Esfera + Textura"
+summary: "Generamos esfera UV, cargamos `sun.jpg`, rotamos la textura: primer objeto 3D texturizado."
+durationMin: 15
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step2-sun-texture"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v2-sun-texture</code> → <code>git checkout v2-sun-texture</code>.
+</Alert>
+
+---
+
+## Primer objeto 3D texturizado
+
+En este paso creamos nuestro **primer objeto 3D con textura**: una esfera que representa el Sol, con textura solar realista y rotación suave.
+
+### Generación de esfera UV
+
+Utilizamos la clase `Mesh` para generar una esfera con coordenadas UV correctas:
+
+```cpp
+#include "mesh.hpp"
+#include "texture.hpp"
+#include "object.hpp"
+
+Mesh sphere = Mesh::sphere();
+```
+
+La esfera se genera proceduralmente con:
+- **Vértices 3D** distribuidos uniformemente
+- **Coordenadas UV** mapeadas esféricamente para texturas
+- **Índices** optimizados para `GL_TRIANGLES`
+
+### Carga de textura solar
+
+Cargamos la textura del Sol desde assets:
+
+```cpp
+Object sun{sphere, Texture("assets/sun.jpg")};
+sun.localScale = glm::vec3(1.0f);  // Tamaño normal
+sun.spinSpeed = glm::radians(30.f);  // Rotación visible pero controlada
+```
+
+### Sistema de objetos simple
+
+La clase `Object` encapsula mesh, textura y transformaciones:
+
+```cpp
+struct Object {
+  // Componentes core
+  Mesh mesh;
+  Texture tex;
+  glm::mat4 model{1.0f};
+
+  // Propiedades de rotación
+  glm::vec3 axis{0, 1, 0};
+  float spinSpeed = 0.0f; // rad/sec
+  float spinAngle = 0.0f; // ángulo acumulado
+
+  // Escala separada
+  glm::vec3 localScale{1.0f};
+};
+```
+
+### Rotación controlada
+
+Sistema de rotación basado en `dt` para consistencia:
+
+```cpp
+void Object::update(float dt, float t) {
+  // Acumular ángulo basado solo en dt
+  spinAngle += spinSpeed * dt;
+
+  // Matriz limpia cada frame
+  glm::mat4 M = glm::scale(glm::mat4(1.0f), localScale);
+  
+  // Aplicar rotación
+  M = glm::rotate(M, spinAngle, axis);
+  
+  model = M;
+}
+```
+
+### Shaders de textura básicos
+
+Shaders simples para mostrar texturas:
+
+```cpp
+static const char *VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 MVP;
+out vec2 vUV;
+void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
+)";
+
+static const char *FSHADER = R"(
+#version 410 core
+in vec2 vUV; 
+uniform sampler2D tex; 
+out vec4 FragColor;
+void main(){ FragColor = texture(tex, vUV); }
+)";
+```
+
+### Cámara cercana
+
+Configuración de cámara para apreciar detalles de textura:
+
+```cpp
+// Cámara cercana para ver detalles de textura
+glm::mat4 view = glm::lookAt(
+  glm::vec3(0.0f, 0.0f, 3.0f),  // Posición cercana al Sol
+  glm::vec3(0.0f, 0.0f, 0.0f),  // Mirando al Sol (origen)
+  glm::vec3(0.0f, 1.0f, 0.0f)   // Vector up
+);
+
+glm::mat4 proj = glm::perspective(
+  glm::radians(45.0f), 
+  static_cast<float>(w) / static_cast<float>(h), 
+  0.1f, 100.0f
+);
+```
+
+## Arquitectura de renderizado
+
+### Loop principal simplificado
+
+Estructura básica del render loop:
+
+```cpp
+while (!glfwWindowShouldClose(win)) {
+  float dt = static_cast<float>(now - last);
+  
+  // Actualizar rotación
+  sun.update(dt, static_cast<float>(now));
+  
+  // Configurar viewport y limpiar
+  glViewport(0, 0, w, h);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  
+  // Renderizar Sol
+  shader.use();
+  sun.draw(shader, VP);
+  
+  glfwSwapBuffers(win);
+  glfwPollEvents();
+}
+```
+
+### Gestión de estados OpenGL
+
+Estados básicos para renderizado 3D:
+
+```cpp
+glEnable(GL_DEPTH_TEST);  // Depth testing para 3D
+glClearColor(0.02f, 0.02f, 0.1f, 1.0f);  // Fondo espacial
+```
+
+## Características del mapeo UV
+
+### Coordenadas esféricas
+
+La esfera se genera con UV mapping correcto:
+
+```cpp
+// Para cada vértice (lat, lon):
+float u = longitude / (2 * π);     // [0, 1] horizontal
+float v = latitude / π + 0.5;      // [0, 1] vertical
+
+// Permite texturas rectangulares → esfera sin distorsión
+```
+
+### Rotación del eje Y
+
+El Sol rota alrededor del eje Y (vertical):
+
+```cpp
+sun.axis = glm::vec3(0, 1, 0);  // Eje de rotación vertical
+sun.spinSpeed = glm::radians(30.f);  // 30°/segundo
+```
+
+### Velocidad observable
+
+Velocidad calibrada para demostraciones:
+
+```cpp
+// 30°/s = medio giro cada 6 segundos
+// Suficientemente rápido para ver movimiento
+// Suficientemente lento para apreciar detalles
+```
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Esfera aparece correctamente en pantalla | ✅ |
+| Textura del Sol se muestra sin distorsiones | ✅ |
+| Rotación es suave y constante | ✅ |
+| No hay artefactos visuales (Z-fighting, etc.) | ✅ |
+| Performance >60 FPS con un objeto | ✅ |
+| Mapeo UV preserva detalles de textura | ✅ |
+| Cámara permite apreciar la superficie solar | ✅ |
+
+<Alert type="success">
+  **¡Primer objeto 3D texturizado completo!** Tienes una **esfera solar realista** con rotación controlada y textura correctamente mapeada.
+</Alert>
+
+<Alert type="tip">
+  **Observa:** Las manchas solares y la textura superficial se mueven de forma realista con la rotación.
+</Alert>
+
+---
+
+## Siguiente: Sistema Orbital
+
+Con el Sol texturizado funcionando, el siguiente paso añade **Tierra y Luna** con mecánicas orbitales jerárquicas.
+
+```bash
+git checkout v3-orbits
+``` 
