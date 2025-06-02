@@ -3,6 +3,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
+#include "logger.hpp"
 
 static glm::mat4 makeProj(const cv::Mat &K, int w, int h, float near, float far)
 {
@@ -26,15 +27,20 @@ ARTracker::ARTracker(int camId, float len)
       detector_(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250))
 {
   cap_.open(camId);
-  if (!cap_.isOpened())
+  if (!cap_.isOpened()) {
+    LOG_ERR("Camera %d failed to open", camId);
     throw std::runtime_error("cam failed");
+  }
+  
   // ----- quick dummy intrinsics (better: load from calibration.yml)
   int w = (int)cap_.get(cv::CAP_PROP_FRAME_WIDTH);
   int h = (int)cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
   double f = 0.9 * w;
   camMat_ = (cv::Mat_<double>(3, 3) << f, 0, w / 2, 0, f, h / 2, 0, 0, 1);
   dist_ = cv::Mat::zeros(1, 5, CV_64F);
-  P_ = makeProj(camMat_, w, h, 0.05f, 100.f);
+  P_ = makeProj(camMat_, w, h, 0.01f, 100.f);  // closer near plane
+  
+  LOG_INF("Camera initialized: %dx%d, marker_len=%.3fm", w, h, markerLen_);
 
   glGenTextures(1, &bgTex_);
   glBindTexture(GL_TEXTURE_2D, bgTex_);
@@ -58,22 +64,30 @@ glm::mat4 ARTracker::cvToGlm(const cv::Vec3d &rvec, const cv::Vec3d &tvec)
 
 void ARTracker::uploadBackground()
 {
+  if (frame_.empty()) {
+    LOG_DBG("Frame empty, skipping upload");
+    return;            // avoid first empty frame
+  }
   cv::cvtColor(frame_, frame_, cv::COLOR_BGR2RGB);
   glBindTexture(GL_TEXTURE_2D, bgTex_);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame_.cols, frame_.rows,
                0, GL_RGB, GL_UNSIGNED_BYTE, frame_.data);
+  LOG_DBG("Background uploaded: %dx%d", frame_.cols, frame_.rows);
 }
 
 bool ARTracker::grabFrame()
 {
-  if (!cap_.read(frame_))
+  if (!cap_.read(frame_) || frame_.empty()) {
+    LOG_ERR("Camera read failed or empty frame");
     return false;
+  }
 
   std::vector<int> ids;
   std::vector<std::vector<cv::Point2f>> corners, reject;
   detector_.detectMarkers(frame_, corners, ids, reject);
   
   markerVisible_ = !ids.empty();             // remember state
+  LOG_DBG("Marker visible: %d (found %zu markers)", markerVisible_, ids.size());
 
   if (markerVisible_)
   {
@@ -81,6 +95,9 @@ bool ARTracker::grabFrame()
     cv::aruco::estimatePoseSingleMarkers(corners, markerLen_, camMat_, dist_,
                                          rvecs, tvecs);
     V_ = cvToGlm(rvecs[0], tvecs[0]);
+    LOG_DBG("Pose: rvec=(%.2f,%.2f,%.2f) tvec=(%.2f,%.2f,%.2f)",
+            rvecs[0][0], rvecs[0][1], rvecs[0][2],
+            tvecs[0][0], tvecs[0][1], tvecs[0][2]);
   }
   uploadBackground();                         // always upload feed
   return true;

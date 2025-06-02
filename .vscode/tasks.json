@@ -7,7 +7,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "clang++ src/*.cpp external/glad/src/glad.c external/imgui/*.cpp external/imgui/backends/imgui_impl_glfw.cpp external/imgui/backends/imgui_impl_opengl3.cpp -std=c++17 -Iexternal/glad/include -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I/opt/homebrew/include $(pkg-config --cflags glfw3) $(pkg-config --libs glfw3) $(pkg-config --cflags --libs opencv4) -framework OpenGL -DIMGUI_IMPL_OPENGL_LOADER_GLAD -o solar && ./solar"
+        "clang++ src/*.cpp external/glad/src/glad.c external/imgui/*.cpp external/imgui/backends/imgui_impl_glfw.cpp external/imgui/backends/imgui_impl_opengl3.cpp -std=c++17 -Iexternal/glad/include -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I/opt/homebrew/include $(pkg-config --cflags glfw3) $(pkg-config --libs glfw3) $(pkg-config --cflags --libs opencv4) -framework OpenGL -DGL_SILENCE_DEPRECATION -DIMGUI_IMPL_OPENGL_LOADER_GLAD -DLOG_LEVEL=2 -o solar && ./solar"
       ],
       "group": {
         "kind": "build",

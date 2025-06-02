@@ -10,6 +10,7 @@
 #include "object.hpp"
 #include "scene.hpp"
 #include "ar_tracker.hpp"
+#include "logger.hpp"
 
 #include "imgui_layer.hpp"
 #include "ui_panel.hpp"
@@ -49,11 +50,13 @@ void main(){ vUV=aUV; gl_Position=vec4(aPos,0.0,1.0); }
 static const char *BG_FSHADER = R"(
 #version 410 core
 in vec2 vUV; uniform sampler2D tex; out vec4 FragColor;
-void main(){ FragColor = texture(tex, vec2(vUV.x, 1.0-vUV.y)); }
+void main(){ FragColor = texture(tex, vUV); }
 )";
 
 int main()
 {
+  LOG_INF("Starting AR Solar System");
+  
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
@@ -70,12 +73,15 @@ int main()
   Shader bgShader(BG_VSHADER, BG_FSHADER);
   Mesh sphere = Mesh::sphere();
 
-  // Create background quad for AR camera feed
+  // Create background quad for AR camera feed (correct vertex order for TRIANGLE_STRIP)
   GLuint bgVAO, bgVBO;
-  float quad[16] = {
-      // pos      // uv
-      -1, -1, 0, 0, 1, -1, 1, 0,
-      1, 1, 1, 1, -1, 1, 0, 1};
+  float quad[] = {
+      // pos.xy   uv
+      -1.f, -1.f,   0.f, 1.f,   // lower-left
+       1.f, -1.f,   1.f, 1.f,   // lower-right
+      -1.f,  1.f,   0.f, 0.f,   // upper-left
+       1.f,  1.f,   1.f, 0.f    // upper-right
+  };
   glGenVertexArrays(1, &bgVAO);
   glBindVertexArray(bgVAO);
   glGenBuffers(1, &bgVBO);
@@ -86,21 +92,25 @@ int main()
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
 
+  // Visible solar system scales (all in marker units)
   Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.spinSpeed = glm::radians(14.f); // arbitrary
+  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.15f));  // 15mm radius → 3cm diameter
+  sun.spinSpeed = glm::radians(15.f);                         // gentle spin
 
   Object earth{sphere, Texture("assets/earth.jpg")};
-  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.27f));
+  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.04f)); // 4mm radius → 8mm diameter
   earth.spinSpeed = glm::radians(360.f / 24.f);
-  earth.orbitRadius = 4.0f;
-  earth.orbitSpeed = glm::radians(360.f / 365.f);
+  earth.orbitRadius = 0.8f;                                    // 6.4cm from Sun
+  earth.orbitSpeed = glm::radians(15.f);                       // 1 orbit per ~24s
 
   Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.073f)); // radius ~ 0.27 Earth
+  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)); // 1mm radius → 2mm diameter  
   moon.spinSpeed = glm::radians(360.f / 27.3f);                // synchronous ≈ equal to translation
-  moon.orbitRadius = 0.5f;                                     // scale of your scene
+  moon.orbitRadius = 0.15f;                                    // 1.2cm from Earth
   moon.orbitSpeed = glm::radians(360.f / 27.3f);               // 27.3 d ≈ 1 sidereal month
   moon.orbitTarget = &earth;                                   // key!
+
+  LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.15f, 0.04f, 0.01f);
 
   Scene scene;
   scene.add(&sun);
@@ -116,6 +126,12 @@ int main()
   ARTracker ar;
   bool showUI = true;
   static float alpha = 0.0f;  // for smooth fade in/out
+  
+  // FPS logging
+  static double fpsTimer = 0;
+  static int frames = 0;
+
+  LOG_INF("Entering main loop");
 
   while (!glfwWindowShouldClose(win))
   {
@@ -124,6 +140,21 @@ int main()
     last = now;
     
     ar.grabFrame(); // updates V, P + bg texture
+
+    // FPS and status logging
+    fpsTimer += dt; ++frames;
+    if (fpsTimer > 2.0) {             // every 2 seconds
+      LOG_INF("FPS: %d  alpha: %.2f  marker: %s  frame: %s", 
+              frames/2, alpha, ar.markerVisible()?"yes":"no", ar.hasValidFrame()?"valid":"empty");
+      fpsTimer = 0; frames = 0;
+    }
+
+    // Skip rendering entirely if no valid camera frame yet
+    if (!ar.hasValidFrame()) {
+      LOG_DBG("No valid frame yet, continuing...");
+      glfwPollEvents();
+      continue;
+    }
 
     // Smooth fade in/out based on marker visibility
     alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
@@ -137,6 +168,7 @@ int main()
       ImGui::Begin("AR Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
       ImGui::TextColored(ImVec4(1, 0, 0, 1), "🎯 Point camera at ArUco marker");
       ImGui::Text("Marker ID: 0 (DICT_6X6_250)");
+      ImGui::Text("Alpha: %.2f", alpha);
       ImGui::End();
     }
 
@@ -150,11 +182,19 @@ int main()
     glBindTexture(GL_TEXTURE_2D, ar.backgroundTex());
     glBindVertexArray(bgVAO);
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);      // ensure quad draws regardless of winding
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glEnable(GL_CULL_FACE);       // re-enable for 3D objects
     glEnable(GL_DEPTH_TEST);
+    
+    static bool loggedBg = false;
+    if (!loggedBg && ar.hasValidFrame()) {
+      LOG_INF("Background quad rendered successfully");
+      loggedBg = true;
+    }
 
-    // ---- update & draw solar system (with fade effect) ----
-    if (alpha > 0.01f) {  // only draw if visible enough
+    // ---- update & draw solar system (only when marker visible and alpha > 0) ----
+    if (ar.markerVisible() && alpha > 0.01f) {
       scene.update(dt, static_cast<float>(now));
       
       // Enable alpha blending for fade effect
@@ -166,6 +206,7 @@ int main()
       scene.draw(shader, ar.proj() * ar.view());
       
       glDisable(GL_BLEND);
+      LOG_DBG("Drew solar system with alpha %.2f", alpha);
     }
 
     gui.end();
@@ -176,6 +217,7 @@ int main()
       showUI = !showUI;
   }
 
+  LOG_INF("Shutting down");
   gui.shutdown();
   glfwTerminate();
   return 0;

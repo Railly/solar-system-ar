@@ -11,6 +11,7 @@ public:
             float markerLength = 0.08f); // metres
   bool grabFrame();                      // capture + detect
   bool markerVisible() const { return markerVisible_; }
+  bool hasValidFrame() const { return !frame_.empty(); }
   GLuint backgroundTex() const { return bgTex_; }
   glm::mat4 view() const { return V_; }
   glm::mat4 proj() const { return P_; }
