@@ -2,11 +2,16 @@
 #include "object.hpp"
 #include <imgui.h>
 
-inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, bool *show = nullptr)
+inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &hover, bool *show = nullptr)
 {
   if (show && !*show)
     return;
   ImGui::Begin("Orbital Control", show);
+  
+  ImGui::SeparatorText("System Position");
+  ImGui::SliderFloat("Height above tablet", &hover, 0.05f, 0.50f, "%.2f units");
+  ImGui::SameLine();
+  ImGui::TextDisabled("(away from surface)");
   
   ImGui::SeparatorText("Sun");
   ImGui::SliderFloat("Sun spin", &sun.spinSpeed, 0.0f, glm::radians(60.f));
