@@ -2,7 +2,8 @@
 #include "object.hpp"
 #include <imgui.h>
 
-inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &hover, float &systemScale, bool *show = nullptr)
+inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &hover, float &systemScale, 
+                            float &lightIntensity, float &lightWarmth, bool *show = nullptr)
 {
   if (show && !*show)
     return;
@@ -17,6 +18,22 @@ inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &ho
   ImGui::SameLine();
   ImGui::TextDisabled("(smaller/larger)");
   
+  ImGui::SeparatorText("Lighting");
+  ImGui::SliderFloat("Sun intensity", &lightIntensity, 0.2f, 2.0f, "%.2f×");
+  ImGui::SameLine();
+  ImGui::TextDisabled("(light brightness)");
+  
+  ImGui::SliderFloat("Light warmth", &lightWarmth, 0.5f, 1.0f, "%.2f");
+  ImGui::SameLine();
+  ImGui::TextDisabled("(yellow/white)");
+
+  static bool showLightDebug = false;
+  ImGui::Checkbox("Show light debug", &showLightDebug);
+  if (showLightDebug) {
+    ImGui::Text("Light follows Sun's exact center position");
+    ImGui::Text("including all transforms and scaling");
+  }
+
   ImGui::SeparatorText("Sun");
   float sunDeg = glm::degrees(sun.spinSpeed);
   if (ImGui::SliderFloat("Sun spin (deg/s)", &sunDeg, 0.0f, 60.0f))

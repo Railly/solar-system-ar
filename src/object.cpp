@@ -30,3 +30,19 @@ void Object::draw(const Shader &sh, const glm::mat4 &VP) const
   tex.bind();
   mesh.draw();
 }
+
+void Object::draw(const Shader &sh, const glm::mat4 &VP, const glm::mat4 &view, const glm::mat4 &transform) const
+{
+  sh.use();
+  
+  glm::mat4 MV = view * transform * model;
+  glm::mat4 MVP = VP * model;
+  glm::mat3 NormalM = glm::transpose(glm::inverse(glm::mat3(MV)));
+  
+  sh.setMat4("MVP", MVP);
+  sh.setMat4("MV", MV);
+  sh.setMat3("NormalM", NormalM);
+  
+  tex.bind();
+  mesh.draw();
+}

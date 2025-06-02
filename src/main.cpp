@@ -38,6 +38,67 @@ void main(){
 }
 )";
 
+// Lit shaders for planets (with lighting)
+static const char *LIT_VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+layout(location=2) in vec3 aNrm;
+
+uniform mat4 MVP;
+uniform mat4 MV;
+uniform mat3 NormalM;
+
+out vec2 vUV;
+out vec3 vNormal;
+out vec3 vViewPos;
+
+void main() {
+    vUV = aUV;
+    vNormal = NormalM * aNrm;
+    vViewPos = vec3(MV * vec4(aPos, 1.0));
+    gl_Position = MVP * vec4(aPos, 1.0);
+}
+)";
+
+static const char *LIT_FSHADER = R"(
+#version 410 core
+in vec2 vUV;
+in vec3 vNormal;
+in vec3 vViewPos;
+
+uniform sampler2D tex;
+uniform vec3 lightPosVS;
+uniform vec3 lightColor;
+uniform float uAlpha;
+
+out vec4 FragColor;
+
+void main() {
+    vec3 N = normalize(-vNormal);  // Flip normal to point outward
+    vec3 L = normalize(lightPosVS - vViewPos);
+    vec3 V = normalize(-vViewPos);
+    vec3 R = reflect(-L, N);
+    
+    // Lighting calculations
+    float diff = max(dot(N, L), 0.0);
+    float spec = pow(max(dot(R, V), 0.0), 32.0);
+    
+    // Add hemisphere lighting for better fill (simulates sky light)
+    vec3 skyDir = vec3(0, 1, 0); // up direction in view space
+    float hemisphere = 0.25 * max(dot(N, skyDir), 0.0);
+    
+    vec3 albedo = texture(tex, vUV).rgb;
+    vec3 ambient = 0.15 * albedo;
+    vec3 diffuse = diff * albedo * lightColor;
+    vec3 specular = spec * 0.3 * lightColor;
+    vec3 fill = hemisphere * albedo * lightColor * 0.4; // subtle fill light
+    
+    vec3 color = ambient + diffuse + specular + fill;
+    FragColor = vec4(color, uAlpha);
+}
+)";
+
 // Background shaders (for AR camera feed)
 static const char *BG_VSHADER = R"(
 #version 410 core
@@ -69,7 +130,8 @@ int main()
   glfwMakeContextCurrent(win);
   gladLoadGL();
 
-  Shader shader(VSHADER, FSHADER);
+  Shader shader(VSHADER, FSHADER);        // unlit shader for Sun
+  Shader litShader(LIT_VSHADER, LIT_FSHADER); // lit shader for planets
   Shader bgShader(BG_VSHADER, BG_FSHADER);
   Mesh sphere = Mesh::sphere();
 
@@ -102,7 +164,7 @@ int main()
   earth.spinSpeed = glm::radians(360.f / 24.f);
   earth.orbitRadius = 0.4f;              // MUCH closer to Sun for demo (3.2cm instead of 9.6cm)
   earth.orbitSpeed = glm::radians(15.f); // 1 orbit per ~24s
-  earth.orbitAxis = glm::vec3(0, 0, 1);  // flat orbit around Z-axis (parallel to table)
+  earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // slightly tilted orbit for better lighting visibility
 
   Object moon{sphere, Texture("assets/moon.jpg")};
   moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); // 2mm radius → 4mm diameter (doubled!)
@@ -110,7 +172,7 @@ int main()
   moon.orbitRadius = 0.08f;                                   // MUCH closer to Earth (6.4mm instead of 1.6cm)
   moon.orbitSpeed = glm::radians(360.f / 27.3f);              // 27.3 d ≈ 1 sidereal month
   moon.orbitTarget = &earth;                                  // key!
-  moon.orbitAxis = glm::vec3(0, 0, 1);                        // flat orbit around Z-axis (same as Earth)
+  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));     // same slight tilt as Earth
 
   LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.18f, 0.08f, 0.02f);
 
@@ -130,6 +192,8 @@ int main()
   static float alpha = 0.0f;   // for smooth fade in/out
   static float gHover = 0.06f; // hover height above marker (closer to tablet for demo)
   static float gSystemScale = 0.3f; // smaller system by default for demo
+  static float gLightIntensity = 0.8f; // sun light intensity (reduced from 1.0 for realism)
+  static float gLightWarmth = 0.95f; // light warmth (yellow vs white)
 
   // FPS logging
   static double fpsTimer = 0;
@@ -169,7 +233,7 @@ int main()
                                : std::max(alpha - dt * 4.0f, 0.0f);
 
     gui.begin();
-    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, &showUI);
+    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, gLightIntensity, gLightWarmth, &showUI);
 
     // Debug feedback when no marker detected
     if (!ar.markerVisible())
@@ -225,20 +289,47 @@ int main()
       glm::mat4 hover = glm::translate(glm::mat4(1.0f),
                                        glm::vec3(0, 0, +gHover)); // POSITIVE = above tablet
       glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(gSystemScale)); // global scale
-      glm::mat4 VP = ar.proj() * ar.view() * hover * scaling;
+      glm::mat4 transform = hover * scaling;
+      glm::mat4 VP = ar.proj() * ar.view() * transform;
+
+      // Calculate Sun's actual center position in view space for lighting
+      glm::vec3 sunPosVS = glm::vec3(ar.view() * transform * sun.model * glm::vec4(0, 0, 0, 1));
+
+      // Debug: Log lighting positions occasionally
+      static int lightDebugCounter = 0;
+      if (++lightDebugCounter % 120 == 0) { // every 4 seconds at 30fps
+        glm::vec3 earthPosWorld = glm::vec3(transform * earth.model * glm::vec4(0, 0, 0, 1));
+        glm::vec3 sunPosWorld = glm::vec3(transform * sun.model * glm::vec4(0, 0, 0, 1));
+        glm::vec3 earthPosVS = glm::vec3(ar.view() * glm::vec4(earthPosWorld, 1));
+        
+        LOG_INF("LIGHTING DEBUG:");
+        LOG_INF("  Sun world: (%.2f, %.2f, %.2f)", sunPosWorld.x, sunPosWorld.y, sunPosWorld.z);
+        LOG_INF("  Earth world: (%.2f, %.2f, %.2f)", earthPosWorld.x, earthPosWorld.y, earthPosWorld.z);
+        LOG_INF("  Sun view: (%.2f, %.2f, %.2f)", sunPosVS.x, sunPosVS.y, sunPosVS.z);
+        LOG_INF("  Earth view: (%.2f, %.2f, %.2f)", earthPosVS.x, earthPosVS.y, earthPosVS.z);
+        
+        glm::vec3 lightDir = glm::normalize(earthPosWorld - sunPosWorld);
+        LOG_INF("  Light direction to Earth: (%.2f, %.2f, %.2f)", lightDir.x, lightDir.y, lightDir.z);
+      }
 
       // Enable alpha blending for fade effect
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+      // 1) Draw planets with lighting
+      litShader.use();
+      glUniform1f(glGetUniformLocation(litShader.id(), "uAlpha"), alpha);
+      glUniform3fv(glGetUniformLocation(litShader.id(), "lightPosVS"), 1, &sunPosVS[0]);
+      glUniform3f(glGetUniformLocation(litShader.id(), "lightColor"), 
+                  1.0f * gLightIntensity, gLightWarmth * gLightIntensity, 0.8f * gLightIntensity); // warm sunlight
+      
+      earth.draw(litShader, VP, ar.view(), transform);
+      moon.draw(litShader, VP, ar.view(), transform);
+
+      // 2) Draw Sun last with unlit shader (emissive)
+      glDepthMask(GL_FALSE);
       shader.use();
       glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
-
-      // 1) Draw planets first (Earth and Moon)
-      earth.draw(shader, VP);
-      moon.draw(shader, VP);
-
-      // 2) Draw Sun last with depth write OFF (so it doesn't hide planets)
-      glDepthMask(GL_FALSE);
       sun.draw(shader, VP);
       glDepthMask(GL_TRUE);
 

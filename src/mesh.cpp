@@ -16,9 +16,16 @@ Mesh Mesh::sphere(int seg, int ring)
       float sx = sin(phi) * cos(theta);
       float sy = cos(phi);
       float sz = sin(phi) * sin(theta);
-      verts.insert(verts.end(), {sx, sy, sz, u, 1.0f - v});
+      
+      // Add position, UV, and normal (normal = position for unit sphere)
+      verts.insert(verts.end(), {
+        sx, sy, sz,        // position
+        u, 1.0f - v,       // UV coordinates
+        sx, sy, sz         // normal (same as position for unit sphere)
+      });
     }
   }
+  
   for (int y = 0; y < ring; ++y)
     for (int x = 0; x < seg; ++x)
     {
@@ -41,10 +48,13 @@ Mesh Mesh::sphere(int seg, int ring)
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ebo);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned), idx.data(), GL_STATIC_DRAW);
 
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+  // Update vertex attributes for position + UV + normal (8 floats per vertex)
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
-  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(3 * sizeof(float)));
   glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(5 * sizeof(float)));
+  glEnableVertexAttribArray(2);
 
   return m;
 }

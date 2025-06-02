@@ -28,5 +28,6 @@ struct Object
   // Methods
   void update(float dt, float t);
   void draw(const Shader &sh, const glm::mat4 &VP) const;
+  void draw(const Shader &sh, const glm::mat4 &VP, const glm::mat4 &view, const glm::mat4 &transform) const; // lit version
   glm::vec3 position() const { return glm::vec3(model[3]); }
 };

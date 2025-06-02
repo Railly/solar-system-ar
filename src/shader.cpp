@@ -33,3 +33,8 @@ void Shader::setMat4(const char *n, const glm::mat4 &m) const
 {
   glUniformMatrix4fv(glGetUniformLocation(id_, n), 1, GL_FALSE, &m[0][0]);
 }
+
+void Shader::setMat3(const char *n, const glm::mat3 &m) const
+{
+  glUniformMatrix3fv(glGetUniformLocation(id_, n), 1, GL_FALSE, &m[0][0]);
+}
