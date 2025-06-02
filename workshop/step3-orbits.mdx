@@ -1,0 +1,245 @@
+---
+id: "step3-orbits"
+tag: "v3-orbits"
+title: "Tierra + Luna + Órbitas"
+summary: "Añadimos matrices de modelo y orbits jerárquicas (padres/hijos): Luna orbita Tierra, Tierra orbita Sol."
+durationMin: 15
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step3-orbits"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v3-orbits</code> → <code>git checkout v3-orbits</code>.
+</Alert>
+
+---
+
+## Mecánicas orbitales jerárquicas
+
+En este paso implementamos el **sistema solar completo** con mecánicas orbitales realistas: Sol al centro, Tierra orbitando el Sol, y Luna orbitando la Tierra.
+
+### Objetos del sistema solar
+
+Creamos tres objetos con propiedades físicas distintas:
+
+```cpp
+#include "mesh.hpp"
+#include "texture.hpp"
+#include "object.hpp"
+#include "scene.hpp"
+
+Mesh sphere = Mesh::sphere();
+
+// Sol - objeto central estático
+Object sun{sphere, Texture("assets/sun.jpg")};
+sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.6f));  // Grande y visible
+sun.spinSpeed = glm::radians(5.f);  // Rotación muy lenta
+
+// Tierra - orbita alrededor del Sol
+Object earth{sphere, Texture("assets/earth.jpg")};  
+earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.25f));  // Tamaño medio
+earth.spinSpeed = glm::radians(30.f);  // Rotación moderada
+earth.orbitRadius = 1.5f;  // 1.5 unidades del Sol
+earth.orbitSpeed = glm::radians(8.f);  // Velocidad orbital lenta
+earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // Órbita ligeramente inclinada
+
+// Luna - orbita alrededor de la Tierra  
+Object moon{sphere, Texture("assets/moon.jpg")};
+moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f));  // Pequeña
+moon.spinSpeed = glm::radians(20.f);  // Rotación moderada
+moon.orbitRadius = 0.6f;  // Distancia segura de la Tierra - sin colisiones!
+moon.orbitSpeed = glm::radians(25.f);  // Más rápida que la Tierra pero observable
+moon.orbitTarget = &earth;  // *** CLAVE: Orbita la Tierra, no el Sol ***
+moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // Misma inclinación
+```
+
+### Sistema jerárquico con Scene
+
+La clase `Scene` maneja automáticamente las órbitas padre-hijo:
+
+```cpp
+Scene scene;
+scene.add(&sun);    // Sol estático en el origen
+scene.add(&earth);  // Tierra orbita el Sol (orbitTarget = nullptr)
+scene.add(&moon);   // Luna orbita la Tierra (orbitTarget = &earth)
+
+// En el loop principal:
+const float TIME_SCALE = 0.3f;  // 30% velocidad - mucho más observable
+
+// Actualizar mecánicas orbitales con escalado de tiempo
+scene.update(dt * TIME_SCALE, static_cast<float>(now) * TIME_SCALE);
+```
+
+### Cámara fija en el espacio
+
+Vista externa del sistema solar para observar las órbitas:
+
+```cpp
+// Cámara observando desde arriba y a la derecha
+glm::mat4 view = glm::lookAt(
+  glm::vec3(3.0f, 2.0f, 3.0f),  // Posición: arriba-derecha-adelante
+  glm::vec3(0.0f, 0.0f, 0.0f),  // Mirando al Sol (origen)
+  glm::vec3(0.0f, 1.0f, 0.0f)   // Vector up
+);
+
+glm::mat4 proj = glm::perspective(
+  glm::radians(45.0f), 
+  static_cast<float>(w) / static_cast<float>(h), 
+  0.1f, 100.0f
+);
+
+glm::mat4 VP = proj * view;
+```
+
+### Renderizado simple
+
+Shader básico para mostrar las texturas:
+
+```cpp
+static const char *VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 MVP;
+out vec2 vUV;
+void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
+)";
+
+static const char *FSHADER = R"(
+#version 410 core
+in vec2 vUV; 
+uniform sampler2D tex; 
+out vec4 FragColor;
+void main(){ FragColor = texture(tex, vUV); }
+)";
+
+// Renderizado en el loop principal:
+shader.use();
+sun.draw(shader, VP);
+earth.draw(shader, VP);
+moon.draw(shader, VP);
+```
+
+## Mecánicas orbitales avanzadas
+
+### Órbitas padre-hijo
+
+El sistema resuelve automáticamente las jerarquías:
+
+```cpp
+void Object::update(float dt, float time) {
+  // Actualizar ángulo orbital
+  angle += orbitSpeed * dt;
+  
+  if (orbitTarget) {
+    // Orbitar alrededor de otro objeto (Luna → Tierra)
+    glm::vec3 orbit = orbitRadius * orbital_calculation(angle, orbitAxis);
+    position = orbitTarget->position + orbit;
+  } else {
+    // Orbitar alrededor del origen (Tierra → Sol)
+    position = orbitRadius * orbital_calculation(angle, orbitAxis);
+  }
+  
+  // Actualizar rotación propia
+  spinAngle += spinSpeed * dt;
+}
+```
+
+### Cálculo orbital 3D
+
+Las órbitas pueden estar en planos inclinados:
+
+```cpp
+glm::vec3 orbital_calculation(float angle, glm::vec3 axis) {
+  // Crear órbita circular en el plano XZ
+  glm::vec3 orbit_xz = glm::vec3(cos(angle), 0, sin(angle));
+  
+  // Rotar según el eje orbital para crear inclinación
+  glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), 
+                                   glm::length(axis) - 1.0f, 
+                                   glm::normalize(axis));
+  
+  return glm::vec3(rotation * glm::vec4(orbit_xz, 0.0f));
+}
+```
+
+### Escalas y velocidades apropiadas
+
+Parámetros que crean un sistema visualmente equilibrado y observable:
+
+```cpp
+// Tamaños proporcionales pero visibles
+Sol:    0.6f radio → Grande y dominante
+Tierra: 0.25f radio → Claramente menor que el Sol  
+Luna:   0.08f radio → Pequeña pero distinguible
+
+// Distancias que evitan colisiones visuales
+Tierra: 1.5f unidades del Sol    → Órbita visible completa
+Luna:   0.6f unidades de Tierra  → Distancia segura, órbita clara
+
+// Velocidades demostrativas (con TIME_SCALE = 0.3)
+Sol:    5°/s → Rotación muy lenta
+Tierra: 8°/s orbital, 30°/s rotación → Movimiento observable
+Luna:   25°/s orbital, 20°/s rotación → Más rápida pero controlada
+
+// Factor de tiempo para control fino
+const float TIME_SCALE = 0.3f;  // Ralentiza todo al 30%
+scene.update(dt * TIME_SCALE, time * TIME_SCALE);
+```
+
+## Ambientación espacial
+
+### Fondo oscuro del espacio
+
+Color de fondo que simula el espacio profundo:
+
+```cpp
+glClearColor(0.02f, 0.02f, 0.1f, 1.0f);  // Azul oscuro espacial
+```
+
+### Depth testing
+
+Manejo correcto de oclusión entre objetos:
+
+```cpp
+glEnable(GL_DEPTH_TEST);  // Objetos más cercanos tapan a los lejanos
+glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);  // Limpiar cada frame
+```
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Sol aparece en el centro, rotando | ✅ |
+| Tierra orbita alrededor del Sol | ✅ |
+| Luna orbita alrededor de la Tierra | ✅ |
+| Luna sigue a la Tierra en su órbita solar | ✅ |
+| Tamaños son proporcionales y distinguibles | ✅ |
+| Velocidades permiten observar el movimiento | ✅ |
+| Texturas se muestran correctamente | ✅ |
+| Performance fluida >30 FPS | ✅ |
+
+<Alert type="success">
+  **¡Sistema orbital completo!** Tienes mecánicas jerárquicas funcionando: la **Luna mantiene su órbita** alrededor de la Tierra mientras ambos orbitan el Sol.
+</Alert>
+
+<Alert type="tip">
+  **Observa cómo** la Luna traza una epicicloide - una curva compleja pero natural que resulta de la combinación de ambas órbitas.
+</Alert>
+
+---
+
+## Siguiente: Tracking AR
+
+Con el sistema solar orbital funcionando, el siguiente paso integra **detección ArUco** para anclar el sistema en realidad aumentada.
+
+```bash
+git checkout v4-ar-marker
+``` 
