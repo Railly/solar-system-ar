@@ -12,9 +12,6 @@
 #include "ar_tracker.hpp"
 #include "logger.hpp"
 
-#include "imgui_layer.hpp"
-#include "ui_panel.hpp"
-
 #include <iostream>
 
 static const char *VSHADER = R"(
@@ -55,7 +52,7 @@ void main(){ FragColor = texture(tex, vUV); }
 
 int main()
 {
-  LOG_INF("Starting AR Solar System - Step 6: GUI Controls");
+  LOG_INF("Starting AR Solar System - Step 5: Camera Background");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -63,7 +60,7 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System - GUI Controls", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System - Camera Background", nullptr, nullptr);
   if (!win)
     return -1;
   glfwMakeContextCurrent(win);
@@ -92,7 +89,7 @@ int main()
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
 
-  // Solar system with basic rendering (no complex lighting)
+  // Solar system with fixed parameters (no UI controls)
   Object sun{sphere, Texture("assets/sun.jpg")};
   sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f)); 
   sun.spinSpeed = glm::radians(15.f);                        
@@ -112,7 +109,7 @@ int main()
   moon.orbitTarget = &earth;                                  
   moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));     
 
-  LOG_INF("Solar system created with basic rendering");
+  LOG_INF("Solar system created with fixed parameters");
 
   Scene scene;
   scene.add(&sun); 
@@ -122,21 +119,16 @@ int main()
   glEnable(GL_DEPTH_TEST);
   double last = glfwGetTime();
 
-  ui::ImGuiLayer gui;
-  gui.init(win);
-
   ARTracker ar;
-  bool showUI = true;
   static float alpha = 0.0f;   
-  static float gHover = 0.06f; 
-  static float gSystemScale = 0.3f; 
-  // Removed lighting controls since we're using basic rendering
+  static const float HOVER_HEIGHT = 0.06f;  // fixed hover height
+  static const float SYSTEM_SCALE = 0.3f;   // fixed system scale
 
   // FPS logging
   static double fpsTimer = 0;
   static int frames = 0;
 
-  LOG_INF("Entering main loop");
+  LOG_INF("Entering main loop - camera background + basic solar system");
 
   while (!glfwWindowShouldClose(win))
   {
@@ -169,20 +161,6 @@ int main()
     alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
                                : std::max(alpha - dt * 4.0f, 0.0f);
 
-    gui.begin();
-    // Simplified UI panel without lighting controls
-    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, gSystemScale, gSystemScale, &showUI); // reuse scale param
-
-    // Debug feedback when no marker detected
-    if (!ar.markerVisible())
-    {
-      ImGui::Begin("AR Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
-      ImGui::TextColored(ImVec4(1, 0, 0, 1), "🎯 Point camera at ArUco marker");
-      ImGui::Text("Marker ID: 0 (DICT_6X6_250)");
-      ImGui::Text("Alpha: %.2f", alpha);
-      ImGui::End();
-    }
-
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
@@ -198,14 +176,21 @@ int main()
     glEnable(GL_CULL_FACE); 
     glEnable(GL_DEPTH_TEST);
 
+    static bool loggedBg = false;
+    if (!loggedBg && ar.hasValidFrame())
+    {
+      LOG_INF("Background camera feed rendered successfully");
+      loggedBg = true;
+    }
+
     // ---- update & draw solar system (basic rendering) ----
     if (ar.markerVisible() && alpha > 0.01f)
     {
       scene.update(dt, static_cast<float>(now));
 
-      // Move entire system above marker
-      glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +gHover)); 
-      glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(gSystemScale)); 
+      // Fixed transformations (no user controls)
+      glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +HOVER_HEIGHT)); 
+      glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(SYSTEM_SCALE)); 
       glm::mat4 transform = hover * scaling;
       glm::mat4 VP = ar.proj() * ar.view() * transform;
 
@@ -222,19 +207,17 @@ int main()
       moon.draw(shader, VP);
 
       glDisable(GL_BLEND);
-      LOG_DBG("Drew solar system with basic rendering, alpha %.2f", alpha);
+      LOG_DBG("Drew solar system with fixed parameters, alpha %.2f", alpha);
     }
 
-    gui.end();
     glfwSwapBuffers(win);
     glfwPollEvents();
 
-    if (glfwGetKey(win, GLFW_KEY_TAB) == GLFW_PRESS)
-      showUI = !showUI;
+    if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+      glfwSetWindowShouldClose(win, true);
   }
 
   LOG_INF("Shutting down");
-  gui.shutdown();
   glfwTerminate();
   return 0;
 }

@@ -1,0 +1,216 @@
+---
+id: "step6-gui"
+tag: "v6-gui"
+title: "UI en vivo"
+summary: "Implementamos ImGui para controlar en tiempo real: radios orbitales, velocidad, hover y escala global del sistema."
+durationMin: 10
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step6-gui"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v6-gui</code> → <code>git checkout v6-gui</code>.
+</Alert>
+
+---
+
+## Controles en tiempo real
+
+En este paso agregamos **ImGui** para ajustar todos los parámetros del sistema solar mientras está funcionando. Sin complicaciones de iluminación, solo controles directos.
+
+### Configuración ImGui
+
+El sistema de UI está encapsulado en clases dedicadas:
+
+```cpp
+#include "imgui_layer.hpp"  // Inicialización ImGui + GLFW
+#include "ui_panel.hpp"     // Panel de controles orbitales
+
+ui::ImGuiLayer gui;
+gui.init(win);
+
+// En el loop principal:
+gui.begin();
+drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, gSystemScale, gSystemScale, &showUI);
+gui.end();
+```
+
+### Panel de control orbital
+
+La función `drawOrbitalPanel()` crea una interfaz completa para ajustar:
+
+```cpp
+static float gHover = 0.06f;      // altura sobre el marcador
+static float gSystemScale = 0.3f; // escala global del sistema
+
+// Controles de posicionamiento
+ImGui::SliderFloat("🚁 Altura", &gHover, 0.02f, 0.20f);
+ImGui::SliderFloat("📏 Escala", &gSystemScale, 0.1f, 1.0f);
+
+// Controles orbitales para cada planeta
+ImGui::SliderFloat("🌍 Radio Tierra", &earth.orbitRadius, 0.05f, 4.0f);
+ImGui::SliderFloat("🌙 Radio Luna", &moon.orbitRadius, 0.02f, 1.0f);
+
+// Velocidades de rotación y órbita
+ImGui::SliderFloat("🔄 Spin Tierra", &earth.spinSpeed, 0.0f, glm::radians(720.f));
+ImGui::SliderFloat("🌕 Órbita Luna", &moon.orbitSpeed, 0.0f, glm::radians(360.f));
+```
+
+### Sistema de renderizado simplificado
+
+Sin iluminación compleja, todos los objetos usan el **shader básico**:
+
+```cpp
+// Un solo shader para todo (sin lighting)
+Shader shader(VSHADER, FSHADER);
+
+// Renderizado unificado
+shader.use();
+glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
+
+sun.draw(shader, VP);
+earth.draw(shader, VP);
+moon.draw(shader, VP);
+```
+
+### Transformaciones ajustables
+
+Los controles ImGui modifican las transformaciones en tiempo real:
+
+```cpp
+// Aplicar altura y escala global controladas por UI
+glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +gHover)); 
+glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(gSystemScale)); 
+glm::mat4 transform = hover * scaling;
+glm::mat4 VP = ar.proj() * ar.view() * transform;
+
+// Los objetos usan sus radios orbitales actualizados
+earth.orbitRadius = valor_del_slider;  // actualizado automáticamente
+moon.orbitRadius = valor_del_slider;
+```
+
+### Feedback visual en vivo
+
+Panel de estado cuando no se detecta marcador:
+
+```cpp
+if (!ar.markerVisible()) {
+  ImGui::Begin("AR Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::TextColored(ImVec4(1, 0, 0, 1), "🎯 Point camera at ArUco marker");
+  ImGui::Text("Marker ID: 0 (DICT_6X6_250)");
+  ImGui::Text("Alpha: %.2f", alpha);  // muestra fade in/out
+  ImGui::End();
+}
+```
+
+### Controles de acceso rápido
+
+Tecla **TAB** para mostrar/ocultar UI:
+
+```cpp
+bool showUI = true;
+
+if (glfwGetKey(win, GLFW_KEY_TAB) == GLFW_PRESS)
+  showUI = !showUI;
+
+// Solo dibuja panel si está habilitado
+if (showUI) {
+  drawOrbitalPanel(...);
+}
+```
+
+## Características del panel
+
+### Sliders logarítmicos
+Para radios orbitales que pueden variar mucho:
+
+```cpp
+// Tierra: desde 5cm hasta 4 metros
+ImGui::SliderFloat("🌍 Radio Tierra", &earth.orbitRadius, 0.05f, 4.0f);
+
+// Luna: desde 2cm hasta 1 metro  
+ImGui::SliderFloat("🌙 Radio Luna", &moon.orbitRadius, 0.02f, 1.0f);
+```
+
+### Velocidades intuitivas
+Conversión automática radianes ↔ grados para UX más amigable:
+
+```cpp
+// Internamente en radianes, mostrado en grados/segundo
+float earthSpinDegrees = glm::degrees(earth.spinSpeed);
+ImGui::SliderFloat("🔄 Spin Tierra (°/s)", &earthSpinDegrees, 0.0f, 720.0f);
+earth.spinSpeed = glm::radians(earthSpinDegrees);
+```
+
+### Valores por defecto demo-friendly
+
+```cpp
+static float gHover = 0.06f;      // 6mm sobre tablet (visible pero no invasivo)
+static float gSystemScale = 0.3f; // 30% del tamaño para mesas pequeñas
+earth.orbitRadius = 0.4f;         // 3.2cm del Sol (muy compacto)
+moon.orbitRadius = 0.08f;         // 6.4mm de la Tierra (muy cerca)
+```
+
+## Arquitectura de UI modular
+
+### ImGuiLayer class
+Maneja inicialización y ciclo de vida:
+
+```cpp
+class ImGuiLayer {
+public:
+  void init(GLFWwindow* window);
+  void begin();  // ImGui::NewFrame()
+  void end();    // ImGui::Render() + draw
+  void shutdown();
+};
+```
+
+### ui_panel.hpp
+Panel especializado para controles orbitales:
+
+```cpp
+void drawOrbitalPanel(
+  Object& sun, Object& earth, Object& moon,
+  float& hover, float& scale, 
+  float& param1, float& param2,  // parámetros adicionales reutilizables
+  bool* showUI
+);
+```
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Panel ImGui aparece correctamente | ✅ |
+| Sliders modifican órbitas en tiempo real | ✅ |
+| TAB muestra/oculta interfaz | ✅ |
+| Altura y escala funcionan suavemente | ✅ |
+| Valores por defecto son demo-friendly | ✅ |
+| Performance >30 FPS con UI activa | ✅ |
+
+<Alert type="success">
+  **¡Controles completos!** Ahora puedes ajustar todo el sistema solar en tiempo real.  
+  Experimenta con **diferentes radios y velocidades** para encontrar la configuración perfecta para tu demo.
+</Alert>
+
+<Alert type="tip">
+  **Prueba estos valores:** Hover=0.10f, Scale=0.5x, Earth orbit=0.6f, Moon orbit=0.12f para un sistema más espacioso.
+</Alert>
+
+---
+
+## Siguiente: Iluminación Phong
+
+Con los controles funcionando perfectamente, el siguiente paso añade **iluminación realista** para que los planetas muestren luz y sombras del Sol.
+
+```bash
+git checkout v7-lighting
+``` 
