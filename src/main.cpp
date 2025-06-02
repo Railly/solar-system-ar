@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <vector>
+#include <cmath>
 
 #include "shader.hpp"
 #include "ar_tracker.hpp"
@@ -25,6 +27,74 @@ in vec2 vUV; uniform sampler2D tex; out vec4 FragColor;
 void main(){ FragColor = texture(tex, vUV); }
 )";
 
+// Thick axis shader
+static const char *AXIS_VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+uniform mat4 MVP;
+void main(){ gl_Position = MVP * vec4(aPos, 1.0); }
+)";
+
+static const char *AXIS_FSHADER = R"(
+#version 410 core
+uniform vec3 uColor;
+out vec4 FragColor;
+void main(){ FragColor = vec4(uColor, 1.0); }
+)";
+
+// Generate thick cylinder geometry for axes
+struct AxisGeometry {
+  GLuint VAO, VBO, EBO;
+  GLsizei indexCount;
+};
+
+AxisGeometry createThickAxis(float radius, float length, int segments = 8) {
+  std::vector<float> vertices;
+  std::vector<unsigned int> indices;
+  
+  // Create cylinder along Z-axis (0,0,0) to (0,0,length)
+  for (int i = 0; i <= segments; i++) {
+    float theta = 2.0f * M_PI * i / segments;
+    float x = radius * cos(theta);
+    float y = radius * sin(theta);
+    
+    // Bottom circle (z=0)
+    vertices.insert(vertices.end(), {x, y, 0.0f});
+    // Top circle (z=length)  
+    vertices.insert(vertices.end(), {x, y, length});
+  }
+  
+  // Generate indices for cylinder sides
+  for (int i = 0; i < segments; i++) {
+    int bottom1 = i * 2;
+    int top1 = i * 2 + 1;
+    int bottom2 = ((i + 1) % (segments + 1)) * 2;
+    int top2 = ((i + 1) % (segments + 1)) * 2 + 1;
+    
+    // Two triangles per quad
+    indices.insert(indices.end(), {static_cast<unsigned int>(bottom1), static_cast<unsigned int>(top1), static_cast<unsigned int>(bottom2)});
+    indices.insert(indices.end(), {static_cast<unsigned int>(bottom2), static_cast<unsigned int>(top1), static_cast<unsigned int>(top2)});
+  }
+  
+  AxisGeometry geom;
+  glGenVertexArrays(1, &geom.VAO);
+  glBindVertexArray(geom.VAO);
+  
+  glGenBuffers(1, &geom.VBO);
+  glBindBuffer(GL_ARRAY_BUFFER, geom.VBO);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+  
+  glGenBuffers(1, &geom.EBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, geom.EBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+  
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+  glEnableVertexAttribArray(0);
+  
+  geom.indexCount = indices.size();
+  return geom;
+}
+
 int main()
 {
   LOG_INF("Starting AR Solar System - Step 4: ArUco Marker Detection");
@@ -42,6 +112,7 @@ int main()
   gladLoadGL();
 
   Shader bgShader(BG_VSHADER, BG_FSHADER);
+  Shader axisShader(AXIS_VSHADER, AXIS_FSHADER);
 
   // Create background quad for AR camera feed
   GLuint bgVAO, bgVBO;
@@ -62,6 +133,13 @@ int main()
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
 
+  // Create thick axis geometry
+  float axisRadius = 0.003f;  // 3mm thick axes - very visible!
+  float axisLength = 0.05f;   // 5cm long
+  AxisGeometry thickAxis = createThickAxis(axisRadius, axisLength, 8);
+  
+  LOG_INF("Created thick axes: radius=%.1fmm, length=%.1fcm", axisRadius*1000, axisLength*100);
+
   glEnable(GL_DEPTH_TEST);
   double last = glfwGetTime();
 
@@ -72,7 +150,7 @@ int main()
   static int frames = 0;
   static bool markerDetectedBefore = false;
 
-  LOG_INF("Entering main loop - camera feed + marker detection only");
+  LOG_INF("Entering main loop - camera feed + marker detection with THICK 3D axes");
 
   while (!glfwWindowShouldClose(win))
   {
@@ -97,7 +175,7 @@ int main()
 
     // Log marker detection events
     if (ar.markerVisible() && !markerDetectedBefore) {
-      LOG_INF("🎯 MARKER DETECTED! ID 0 is now visible");
+      LOG_INF("🎯 MARKER DETECTED! ID 0 - showing THICK 3D axes (X=red, Y=green, Z=blue)");
       markerDetectedBefore = true;
     } else if (!ar.markerVisible() && markerDetectedBefore) {
       LOG_INF("❌ Marker lost - point camera back at ArUco marker");
@@ -133,8 +211,42 @@ int main()
       loggedCam = true;
     }
 
-    // Optional: Could add simple overlay graphics here to show marker detection
-    // For now, we rely on console logging to show detection status
+    // ---- draw THICK 3D axes when marker is detected ----
+    if (ar.markerVisible()) {
+      glm::mat4 VP = ar.proj() * ar.view();
+      
+      axisShader.use();
+      glBindVertexArray(thickAxis.VAO);
+      
+      // X axis - Red (rotate Z-axis cylinder to point along +X)
+      glm::mat4 xTransform = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0, 1, 0));
+      glm::mat4 xMVP = VP * xTransform;
+      glUniform3f(glGetUniformLocation(axisShader.id(), "uColor"), 1.0f, 0.0f, 0.0f);
+      glUniformMatrix4fv(glGetUniformLocation(axisShader.id(), "MVP"), 1, GL_FALSE, &xMVP[0][0]);
+      glDrawElements(GL_TRIANGLES, thickAxis.indexCount, GL_UNSIGNED_INT, 0);
+      
+      // Y axis - Green (rotate Z-axis cylinder to point along +Y)
+      glm::mat4 yTransform = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1, 0, 0));
+      glm::mat4 yMVP = VP * yTransform;
+      glUniform3f(glGetUniformLocation(axisShader.id(), "uColor"), 0.0f, 1.0f, 0.0f);
+      glUniformMatrix4fv(glGetUniformLocation(axisShader.id(), "MVP"), 1, GL_FALSE, &yMVP[0][0]);
+      glDrawElements(GL_TRIANGLES, thickAxis.indexCount, GL_UNSIGNED_INT, 0);
+      
+      // Z axis - Blue (cylinder already aligned with +Z)
+      glm::mat4 zMVP = VP; // no rotation needed
+      glUniform3f(glGetUniformLocation(axisShader.id(), "uColor"), 0.0f, 0.0f, 1.0f);
+      glUniformMatrix4fv(glGetUniformLocation(axisShader.id(), "MVP"), 1, GL_FALSE, &zMVP[0][0]);
+      glDrawElements(GL_TRIANGLES, thickAxis.indexCount, GL_UNSIGNED_INT, 0);
+      
+      // Debug: Log marker pose occasionally
+      static int poseDebugCounter = 0;
+      if (++poseDebugCounter % 60 == 0) { // every 2 seconds at 30fps
+        glm::mat4 view = ar.view();
+        glm::vec3 markerPos = glm::vec3(view[3]); // translation part
+        LOG_INF("Marker ID 0 pose - position: (%.3f, %.3f, %.3f) - THICK axes visible!", 
+                markerPos.x, markerPos.y, markerPos.z);
+      }
+    }
 
     glfwSwapBuffers(win);
     glfwPollEvents();
