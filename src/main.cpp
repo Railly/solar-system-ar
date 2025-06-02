@@ -1,7 +1,5 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <cmath>
 
 #include "logger.hpp"
 
@@ -9,15 +7,15 @@
 
 int main()
 {
-  LOG_INF("Starting OpenGL Window - Step 1: GLFW + Glad Context");
+  LOG_INF("Starting AR Solar System - Step 0: Bootstrap & Build");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);  // Para macOS
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "OpenGL Window - Animated Clear", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System - Bootstrap", nullptr, nullptr);
   if (!win) {
     LOG_ERR("Failed to create GLFW window");
     glfwTerminate();
@@ -30,28 +28,19 @@ int main()
     return -1;
   }
 
+  glfwSwapInterval(1);  // V-Sync
+  glClearColor(0.12f, 0.12f, 0.15f, 1.0f);  // Fondo gris oscuro
+
   LOG_INF("OpenGL Context: %s", glGetString(GL_VERSION));
   LOG_INF("GPU: %s", glGetString(GL_RENDERER));
-
-  double last = glfwGetTime();
-  
-  LOG_INF("Window initialized - animated clear color to test GPU rendering");
+  LOG_INF("Window created - basic gray background, press ESC to exit");
 
   while (!glfwWindowShouldClose(win))
   {
-    double now = glfwGetTime();
-    float time = static_cast<float>(now);
-
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
 
-    // Animated clear color - cycles through rainbow
-    float r = 0.5f + 0.5f * sin(time * 0.8f);
-    float g = 0.5f + 0.5f * sin(time * 0.8f + 2.0f);
-    float b = 0.5f + 0.5f * sin(time * 0.8f + 4.0f);
-    
-    glClearColor(r, g, b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glfwSwapBuffers(win);

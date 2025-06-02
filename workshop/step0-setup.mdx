@@ -1,0 +1,151 @@
+---
+id: "step0-setup"
+tag: "v0-setup"
+title: "Bootstrap & Build"
+summary: "Clonamos el repo, instalamos Homebrew + GLFW + Glad y comprobamos una ventana OpenGL vacía."
+durationMin: 10
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step0-setup"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v0-setup</code> → <code>git checkout v0-setup</code>.
+</Alert>
+
+---
+
+## Clonar el proyecto
+
+```bash
+git clone https://github.com/FISI-SM/locked-in-cg.git
+cd locked-in-cg
+```
+
+## Instalar Homebrew y dependencias
+
+```bash
+# Instalar Homebrew (si no lo tienes)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Instalar dependencias del proyecto
+brew install glfw glm opencv pkg-config
+```
+
+<Alert type="warning">
+  **Glad** ya viene vendorizado en `external/glad/` - **NO uses brew install glad**.
+</Alert>
+
+## Build System
+
+El proyecto usa **VS Code tasks** para compilación. El archivo `tasks.json` ya contiene la tarea **🔥 Build + Run AR Solar** que:
+
+- Compila **src/*.cpp**, glad y Dear ImGui
+- Enlaza OpenGL 4.1, GLFW y OpenCV 4.11  
+- Genera **./solar** y lo ejecuta automáticamente
+
+### Compilar y ejecutar
+
+Presiona **⌘⇧B** (Cmd+Shift+B) en VS Code o usa terminal:
+
+```bash
+# Compilación manual si prefieres terminal
+clang++ -std=c++17 -I external/glad/include -I external/imgui \
+  src/*.cpp external/glad/src/glad.c external/imgui/*.cpp \
+  external/imgui/backends/imgui_impl_glfw.cpp \
+  external/imgui/backends/imgui_impl_opengl3.cpp \
+  -framework OpenGL $(pkg-config --cflags --libs glfw3 opencv4) \
+  -o solar && ./solar
+```
+
+## Verificar configuración inicial
+
+Deberías ver una **ventana gris oscuro** con el título "AR Solar System - Bootstrap":
+
+```cpp
+glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);   // macOS
+
+glfwSwapInterval(1);                                   // V-Sync
+glClearColor(0.12f, 0.12f, 0.15f, 1.0f);             // Fondo gris
+```
+
+### Logs esperados
+
+El programa debe mostrar:
+
+```
+[INFO] Starting AR Solar System - Step 0: Bootstrap & Build
+[INFO] OpenGL Context: 4.1 Metal - 88.1
+[INFO] GPU: Apple M1 Pro
+[INFO] Window created - basic gray background, press ESC to exit
+```
+
+## Estructura del proyecto
+
+```
+locked-in-cg/
+├── src/                 # Código fuente principal
+│   ├── main.cpp        # Punto de entrada
+│   └── logger.hpp      # Sistema de logging
+├── external/           # Dependencias vendorizadas
+│   ├── glad/          # OpenGL loader
+│   │   ├── include/
+│   │   └── src/
+│   ├── imgui/         # Dear ImGui
+│   └── stb/           # STB image loading
+├── assets/            # Texturas y recursos
+├── workshop/          # Documentación de pasos
+└── .vscode/          # Configuración VS Code
+    └── tasks.json    # Build tasks
+```
+
+## Dependencias verificadas
+
+| Librería | Versión | Propósito |
+|----------|---------|-----------|
+| **GLFW** | 3.4+ | Sistema de ventanas |
+| **Glad** | vendorizado | OpenGL loader |
+| **GLM** | 1.0+ | Matemáticas 3D |
+| **OpenCV** | 4.11+ | Computer vision (ArUco) |
+| **Dear ImGui** | vendorizado | UI controls |
+| **STB** | vendorizado | Carga de imágenes |
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Repo clonado correctamente | ✅ |
+| Homebrew instalado | ✅ |
+| Dependencias instaladas (glfw, glm, opencv) | ✅ |
+| Compila sin warnings | ✅ |
+| Ejecutable `solar` se genera | ✅ |
+| Ventana gris se abre (no crash) | ✅ |
+| Se cierra con <kbd>ESC</kbd> | ✅ |
+| Logs muestran GPU y OpenGL version | ✅ |
+
+<Alert type="success">
+  **¡Build system funcionando!** El **bootstrap está completo** - proyecto compila y ejecuta correctamente.
+</Alert>
+
+<Alert type="tip">
+  **Si hay errores:** Verifica que tienes Xcode Command Line Tools instaladas: `xcode-select --install`
+</Alert>
+
+---
+
+## Siguiente: Ventana & Contexto
+
+Con el bootstrap funcionando, el siguiente paso añade **clear color animado** para verificar el pipeline de renderizado.
+
+```bash
+git checkout v1-opengl-window
+``` 
