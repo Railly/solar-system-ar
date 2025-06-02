@@ -1,0 +1,239 @@
+---
+id: "step5-background"
+tag: "v5-background"
+title: "Video de fondo"
+summary: "Implementamos textura de cámara en tiempo real sobre un quad fullscreen como fondo AR del sistema solar."
+durationMin: 10
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step5-background"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v5-background</code> → <code>git checkout v5-background</code>.
+</Alert>
+
+---
+
+## Background de cámara en tiempo real
+
+En este paso implementamos el **fondo de realidad aumentada** usando la cámara web como textura de fondo, sobre la cual flotará nuestro sistema solar 3D.
+
+### Quad de fondo fullscreen
+
+Creamos un quad que cubre toda la pantalla para mostrar el video de la cámara:
+
+```cpp
+// Create background quad for AR camera feed
+GLuint bgVAO, bgVBO;
+float quad[] = {
+    // pos.xy   uv
+    -1.f, -1.f, 0.f, 1.f, // lower-left
+    1.f, -1.f, 1.f, 1.f,  // lower-right
+    -1.f, 1.f, 0.f, 0.f,  // upper-left
+    1.f, 1.f, 1.f, 0.f    // upper-right
+};
+
+glGenVertexArrays(1, &bgVAO);
+glBindVertexArray(bgVAO);
+glGenBuffers(1, &bgVBO);
+glBindBuffer(GL_ARRAY_BUFFER, bgVBO);
+glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+```
+
+### Shaders de background
+
+Shaders especializados para renderizar el fondo de cámara:
+
+```cpp
+static const char *BG_VSHADER = R"(
+#version 410 core
+layout(location=0) in vec2 aPos;  // Posición 2D directa
+layout(location=1) in vec2 aUV;   // Coordenadas UV
+out vec2 vUV;
+void main(){ 
+  vUV = aUV; 
+  gl_Position = vec4(aPos, 0.0, 1.0);  // Z=0, W=1 para fullscreen
+}
+)";
+
+static const char *BG_FSHADER = R"(
+#version 410 core
+in vec2 vUV; 
+uniform sampler2D tex;  // Textura de la cámara
+out vec4 FragColor;
+void main(){ 
+  FragColor = texture(tex, vUV); 
+}
+)";
+```
+
+### Pipeline de renderizado por capas
+
+Renderizamos en **dos pasadas separadas** para mantener el depth buffer correcto:
+
+```cpp
+// ---- 1) Dibujar fondo de cámara (siempre) ----
+bgShader.use();
+glBindTexture(GL_TEXTURE_2D, ar.backgroundTex());
+glBindVertexArray(bgVAO);
+glDisable(GL_DEPTH_TEST);  // Fondo no usa depth
+glDisable(GL_CULL_FACE);   // Garantiza que el quad se dibuje
+glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+glEnable(GL_CULL_FACE);    // Re-activar para objetos 3D
+glEnable(GL_DEPTH_TEST);   // Re-activar depth para 3D
+
+// ---- 2) Dibujar sistema solar 3D (solo si marker visible) ----
+if (ar.markerVisible() && alpha > 0.01f) {
+  // ... render 3D objects with depth testing
+}
+```
+
+### Integración ARTracker
+
+La clase `ARTracker` maneja automáticamente la captura y conversión:
+
+```cpp
+ARTracker ar;
+
+// En el loop principal:
+ar.grabFrame();  // Captura frame de cámara y detecta marcadores
+
+// Verificar si tenemos video válido
+if (!ar.hasValidFrame()) {
+  LOG_DBG("No valid frame yet, continuing...");
+  glfwPollEvents();
+  continue;
+}
+
+// Usar textura de fondo
+glBindTexture(GL_TEXTURE_2D, ar.backgroundTex());
+```
+
+### Sistema sin controles de usuario
+
+Esta versión usa **parámetros fijos** para enfocarse en el background:
+
+```cpp
+// Parámetros fijos (sin ImGui)
+static const float HOVER_HEIGHT = 0.06f;  // 6mm sobre el marcador
+static const float SYSTEM_SCALE = 0.3f;   // 30% del tamaño original
+
+// Transformaciones fijas
+glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +HOVER_HEIGHT)); 
+glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(SYSTEM_SCALE)); 
+glm::mat4 transform = hover * scaling;
+```
+
+### Logging de estado
+
+Sistema de debug para verificar que el background funciona:
+
+```cpp
+static bool loggedBg = false;
+if (!loggedBg && ar.hasValidFrame()) {
+  LOG_INF("Background camera feed rendered successfully");
+  loggedBg = true;
+}
+
+// FPS y estado cada 2 segundos
+if (fpsTimer > 2.0) {
+  LOG_INF("FPS: %d  alpha: %.2f  marker: %s  frame: %s",
+          frames / 2, alpha, 
+          ar.markerVisible() ? "yes" : "no", 
+          ar.hasValidFrame() ? "valid" : "empty");
+}
+```
+
+## Arquitectura de textura de cámara
+
+### Coordinadas UV correctas
+El quad debe mapear correctamente la imagen de cámara:
+
+```cpp
+// UV mapping: (0,1) = lower-left, (1,0) = upper-right
+-1.f, -1.f, 0.f, 1.f, // lower-left  → UV (0,1)
+ 1.f, -1.f, 1.f, 1.f, // lower-right → UV (1,1)  
+-1.f,  1.f, 0.f, 0.f, // upper-left  → UV (0,0)
+ 1.f,  1.f, 1.f, 0.f  // upper-right → UV (1,0)
+```
+
+### Triangle strip rendering
+Usamos `GL_TRIANGLE_STRIP` para eficiencia:
+
+```cpp
+// Orden de vértices para triangle strip:
+// 0---2    (lower-left, upper-left)
+// |  /|    
+// | / |    Triángulo 1: [0,1,2]
+// |/  |    Triángulo 2: [1,3,2]  
+// 1---3    (lower-right, upper-right)
+
+glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+```
+
+### Gestión de estados OpenGL
+
+Importante alternar correctamente los estados:
+
+```cpp
+// Para el fondo:
+glDisable(GL_DEPTH_TEST);  // No competir con depth buffer
+glDisable(GL_CULL_FACE);   // Asegurar que quad se dibuje
+
+// Para objetos 3D:
+glEnable(GL_DEPTH_TEST);   // Usar depth testing normal
+glEnable(GL_CULL_FACE);    // Culling de caras traseras
+```
+
+## Efecto fade in/out
+
+Sistema suave de aparición/desaparición basado en detección de marcador:
+
+```cpp
+static float alpha = 0.0f;
+
+// Fade in cuando se detecta marker, fade out cuando se pierde
+alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
+                           : std::max(alpha - dt * 4.0f, 0.0f);
+
+// Aplicar alpha a objetos 3D
+shader.use();
+glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
+```
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Cámara muestra video en tiempo real | ✅ |
+| Quad de fondo cubre toda la pantalla | ✅ |
+| ArUco marker se detecta sobre video | ✅ |
+| Sistema solar aparece flotando sobre cámara | ✅ |
+| Fade in/out funciona suavemente | ✅ |
+| Performance >30 FPS con background activo | ✅ |
+
+<Alert type="success">
+  **¡AR Background completo!** El sistema solar ahora flota sobre el video de la cámara en tiempo real.  
+  El **fondo de realidad aumentada** está funcionando correctamente con detección de marcadores.
+</Alert>
+
+<Alert type="tip">
+  **Asegúrate de:** tener buena iluminación, marcador bien enfocado, y cámara estable para mejor tracking.
+</Alert>
+
+---
+
+## Siguiente: ImGui Controls
+
+Con el background AR funcionando, el siguiente paso añade **controles de usuario** para ajustar el sistema en tiempo real.
+
+```bash
+git checkout v6-gui
+``` 

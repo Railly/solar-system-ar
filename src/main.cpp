@@ -5,35 +5,10 @@
 #include <algorithm>
 
 #include "shader.hpp"
-#include "mesh.hpp"
-#include "texture.hpp"
-#include "object.hpp"
-#include "scene.hpp"
 #include "ar_tracker.hpp"
 #include "logger.hpp"
 
 #include <iostream>
-
-static const char *VSHADER = R"(
-#version 410 core
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec2 aUV;
-uniform mat4 MVP;
-out vec2 vUV;
-void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
-)";
-
-static const char *FSHADER = R"(
-#version 410 core
-in vec2 vUV; 
-uniform sampler2D tex; 
-uniform float uAlpha;
-out vec4 FragColor;
-void main(){ 
-  FragColor = texture(tex, vUV);
-  FragColor.a *= uAlpha;
-}
-)";
 
 // Background shaders (for AR camera feed)
 static const char *BG_VSHADER = R"(
@@ -52,7 +27,7 @@ void main(){ FragColor = texture(tex, vUV); }
 
 int main()
 {
-  LOG_INF("Starting AR Solar System - Step 5: Camera Background");
+  LOG_INF("Starting AR Solar System - Step 4: ArUco Marker Detection");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -60,15 +35,13 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System - Camera Background", nullptr, nullptr);
+  GLFWwindow *win = glfwCreateWindow(800, 600, "AR Solar System - Marker Detection", nullptr, nullptr);
   if (!win)
     return -1;
   glfwMakeContextCurrent(win);
   gladLoadGL();
 
-  Shader shader(VSHADER, FSHADER);        // basic shader for all objects
   Shader bgShader(BG_VSHADER, BG_FSHADER);
-  Mesh sphere = Mesh::sphere();
 
   // Create background quad for AR camera feed
   GLuint bgVAO, bgVBO;
@@ -89,46 +62,17 @@ int main()
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
 
-  // Solar system with fixed parameters (no UI controls)
-  Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f)); 
-  sun.spinSpeed = glm::radians(15.f);                        
-
-  Object earth{sphere, Texture("assets/earth.jpg")};
-  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f)); 
-  earth.spinSpeed = glm::radians(360.f / 24.f);
-  earth.orbitRadius = 0.4f;              
-  earth.orbitSpeed = glm::radians(15.f); 
-  earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); 
-
-  Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); 
-  moon.spinSpeed = glm::radians(360.f / 27.3f);               
-  moon.orbitRadius = 0.08f;                                   
-  moon.orbitSpeed = glm::radians(360.f / 27.3f);              
-  moon.orbitTarget = &earth;                                  
-  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));     
-
-  LOG_INF("Solar system created with fixed parameters");
-
-  Scene scene;
-  scene.add(&sun); 
-  scene.add(&earth);
-  scene.add(&moon);
-
   glEnable(GL_DEPTH_TEST);
   double last = glfwGetTime();
 
   ARTracker ar;
-  static float alpha = 0.0f;   
-  static const float HOVER_HEIGHT = 0.06f;  // fixed hover height
-  static const float SYSTEM_SCALE = 0.3f;   // fixed system scale
 
   // FPS logging
   static double fpsTimer = 0;
   static int frames = 0;
+  static bool markerDetectedBefore = false;
 
-  LOG_INF("Entering main loop - camera background + basic solar system");
+  LOG_INF("Entering main loop - camera feed + marker detection only");
 
   while (!glfwWindowShouldClose(win))
   {
@@ -143,10 +87,21 @@ int main()
     ++frames;
     if (fpsTimer > 2.0)
     { 
-      LOG_INF("FPS: %d  alpha: %.2f  marker: %s  frame: %s",
-              frames / 2, alpha, ar.markerVisible() ? "yes" : "no", ar.hasValidFrame() ? "valid" : "empty");
+      LOG_INF("FPS: %d  marker: %s  frame: %s",
+              frames / 2, 
+              ar.markerVisible() ? "DETECTED" : "not found", 
+              ar.hasValidFrame() ? "valid" : "empty");
       fpsTimer = 0;
       frames = 0;
+    }
+
+    // Log marker detection events
+    if (ar.markerVisible() && !markerDetectedBefore) {
+      LOG_INF("🎯 MARKER DETECTED! ID 0 is now visible");
+      markerDetectedBefore = true;
+    } else if (!ar.markerVisible() && markerDetectedBefore) {
+      LOG_INF("❌ Marker lost - point camera back at ArUco marker");
+      markerDetectedBefore = false;
     }
 
     // Skip rendering entirely if no valid camera frame yet
@@ -157,16 +112,12 @@ int main()
       continue;
     }
 
-    // Smooth fade in/out based on marker visibility
-    alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
-                               : std::max(alpha - dt * 4.0f, 0.0f);
-
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // ---- draw background quad (always) ----
+    // ---- draw camera background (always) ----
     bgShader.use();
     glBindTexture(GL_TEXTURE_2D, ar.backgroundTex());
     glBindVertexArray(bgVAO);
@@ -176,39 +127,14 @@ int main()
     glEnable(GL_CULL_FACE); 
     glEnable(GL_DEPTH_TEST);
 
-    static bool loggedBg = false;
-    if (!loggedBg && ar.hasValidFrame())
-    {
-      LOG_INF("Background camera feed rendered successfully");
-      loggedBg = true;
+    static bool loggedCam = false;
+    if (!loggedCam && ar.hasValidFrame()) {
+      LOG_INF("✅ Camera feed active - point at ArUco marker ID 0");
+      loggedCam = true;
     }
 
-    // ---- update & draw solar system (basic rendering) ----
-    if (ar.markerVisible() && alpha > 0.01f)
-    {
-      scene.update(dt, static_cast<float>(now));
-
-      // Fixed transformations (no user controls)
-      glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +HOVER_HEIGHT)); 
-      glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(SYSTEM_SCALE)); 
-      glm::mat4 transform = hover * scaling;
-      glm::mat4 VP = ar.proj() * ar.view() * transform;
-
-      // Enable alpha blending for fade effect
-      glEnable(GL_BLEND);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-      // Draw all objects with basic shader (no lighting)
-      shader.use();
-      glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
-      
-      sun.draw(shader, VP);
-      earth.draw(shader, VP);
-      moon.draw(shader, VP);
-
-      glDisable(GL_BLEND);
-      LOG_DBG("Drew solar system with fixed parameters, alpha %.2f", alpha);
-    }
+    // Optional: Could add simple overlay graphics here to show marker detection
+    // For now, we rely on console logging to show detection status
 
     glfwSwapBuffers(win);
     glfwPollEvents();
