@@ -1,40 +1,15 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <algorithm>
-#include <vector>
 #include <cmath>
 
-#include "shader.hpp"
-#include "mesh.hpp"
-#include "texture.hpp"
-#include "object.hpp" 
 #include "logger.hpp"
 
 #include <iostream>
 
-// Simple texture shader 
-static const char *VSHADER = R"(
-#version 410 core
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec2 aUV;
-uniform mat4 MVP;
-out vec2 vUV;
-void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
-)";
-
-static const char *FSHADER = R"(
-#version 410 core
-in vec2 vUV; 
-uniform sampler2D tex; 
-out vec4 FragColor;
-void main(){ FragColor = texture(tex, vUV); }
-)";
-
 int main()
 {
-  LOG_INF("Starting Solar System - Step 2: Sun Texture & Rotation");
+  LOG_INF("Starting OpenGL Window - Step 1: GLFW + Glad Context");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -42,59 +17,42 @@ int main()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-  GLFWwindow *win = glfwCreateWindow(800, 600, "Solar System - Sun Texture", nullptr, nullptr);
-  if (!win)
+  GLFWwindow *win = glfwCreateWindow(800, 600, "OpenGL Window - Animated Clear", nullptr, nullptr);
+  if (!win) {
+    LOG_ERR("Failed to create GLFW window");
+    glfwTerminate();
     return -1;
+  }
   glfwMakeContextCurrent(win);
-  gladLoadGL();
+  
+  if (!gladLoadGL()) {
+    LOG_ERR("Failed to initialize Glad");
+    return -1;
+  }
 
-  Shader shader(VSHADER, FSHADER);
-  Mesh sphere = Mesh::sphere();
-
-  // Single Sun object
-  Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.localScale = glm::vec3(1.0f);  // Normal size
-  sun.spinSpeed = glm::radians(30.f);  // Visible but not too fast rotation
-
-  glEnable(GL_DEPTH_TEST);
-  glClearColor(0.02f, 0.02f, 0.1f, 1.0f);  // Dark space background
+  LOG_INF("OpenGL Context: %s", glGetString(GL_VERSION));
+  LOG_INF("GPU: %s", glGetString(GL_RENDERER));
 
   double last = glfwGetTime();
   
-  LOG_INF("Sun initialized - textured sphere with rotation");
+  LOG_INF("Window initialized - animated clear color to test GPU rendering");
 
   while (!glfwWindowShouldClose(win))
   {
     double now = glfwGetTime();
-    float dt = static_cast<float>(now - last);
-    last = now;
-
-    // Update Sun rotation
-    sun.update(dt, static_cast<float>(now));
+    float time = static_cast<float>(now);
 
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     glViewport(0, 0, w, h);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Camera setup - close view of the Sun
-    glm::mat4 view = glm::lookAt(
-      glm::vec3(0.0f, 0.0f, 3.0f),  // Camera closer to see texture detail
-      glm::vec3(0.0f, 0.0f, 0.0f),  // Look at Sun (origin)
-      glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
-    );
+    // Animated clear color - cycles through rainbow
+    float r = 0.5f + 0.5f * sin(time * 0.8f);
+    float g = 0.5f + 0.5f * sin(time * 0.8f + 2.0f);
+    float b = 0.5f + 0.5f * sin(time * 0.8f + 4.0f);
     
-    glm::mat4 proj = glm::perspective(
-      glm::radians(45.0f), 
-      static_cast<float>(w) / static_cast<float>(h), 
-      0.1f, 100.0f
-    );
-    
-    glm::mat4 VP = proj * view;
-
-    // Render the Sun
-    shader.use();
-    sun.draw(shader, VP);
+    glClearColor(r, g, b, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     glfwSwapBuffers(win);
     glfwPollEvents();

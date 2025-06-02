@@ -1,0 +1,228 @@
+---
+id: "step1-window"
+tag: "v1-opengl-window"
+title: "Ventana & Contexto"
+summary: "GLFW ↔ Glad listos, clear-color animado para comprobar que la GPU rinde correctamente."
+durationMin: 5
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step1-window"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v1-opengl-window</code> → <code>git checkout v1-opengl-window</code>.
+</Alert>
+
+---
+
+## Contexto OpenGL funcionando
+
+En este paso establecemos la **base fundamental**: ventana GLFW, contexto OpenGL 4.1 Core, y verificamos que la GPU renderiza correctamente con un clear color animado.
+
+### Inicialización GLFW
+
+Configuramos GLFW para OpenGL 4.1 Core Profile:
+
+```cpp
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <cmath>
+
+glfwInit();
+glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);  // Para macOS
+```
+
+### Creación de ventana
+
+Ventana básica con manejo de errores:
+
+```cpp
+GLFWwindow *win = glfwCreateWindow(800, 600, "OpenGL Window - Animated Clear", nullptr, nullptr);
+if (!win) {
+  LOG_ERR("Failed to create GLFW window");
+  glfwTerminate();
+  return -1;
+}
+glfwMakeContextCurrent(win);
+```
+
+### Inicialización de Glad
+
+Cargar funciones OpenGL con verificación:
+
+```cpp
+if (!gladLoadGL()) {
+  LOG_ERR("Failed to initialize Glad");
+  return -1;
+}
+
+LOG_INF("OpenGL Context: %s", glGetString(GL_VERSION));
+LOG_INF("GPU: %s", glGetString(GL_RENDERER));
+```
+
+### Clear color animado
+
+Sistema de verificación GPU con colores que cambian:
+
+```cpp
+while (!glfwWindowShouldClose(win)) {
+  double now = glfwGetTime();
+  float time = static_cast<float>(now);
+
+  // Obtener tamaño del framebuffer
+  int w, h;
+  glfwGetFramebufferSize(win, &w, &h);
+  glViewport(0, 0, w, h);
+
+  // Clear color animado - ciclos de arcoíris
+  float r = 0.5f + 0.5f * sin(time * 0.8f);
+  float g = 0.5f + 0.5f * sin(time * 0.8f + 2.0f);
+  float b = 0.5f + 0.5f * sin(time * 0.8f + 4.0f);
+  
+  glClearColor(r, g, b, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  glfwSwapBuffers(win);
+  glfwPollEvents();
+}
+```
+
+## Verificación del pipeline
+
+### Test de renderizado
+
+El clear color animado verifica:
+- **GPU funcional:** Colores cambian suavemente
+- **Swap chain:** Sin tearing ni parpadeos
+- **Event loop:** Respuesta a input (ESC para salir)
+- **Viewport:** Manejo correcto de redimensionado
+
+### Matemáticas de animación
+
+Función sinusoidal para colores suaves:
+
+```cpp
+// Genera valores entre 0.0 y 1.0
+float r = 0.5f + 0.5f * sin(time * 0.8f);        // Rojo
+float g = 0.5f + 0.5f * sin(time * 0.8f + 2.0f); // Verde (desfase +2)
+float b = 0.5f + 0.5f * sin(time * 0.8f + 4.0f); // Azul (desfase +4)
+
+// Velocidad: 0.8f rad/s ≈ 7.6 segundos por ciclo completo
+// Desfases: 2.0f y 4.0f crean separación de colores
+```
+
+### Gestión de eventos
+
+Control básico del programa:
+
+```cpp
+glfwPollEvents();  // Procesar eventos de ventana
+
+if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+  glfwSetWindowShouldClose(win, true);  // ESC para salir
+```
+
+## Arquitectura mínima
+
+### Includes esenciales
+
+Solo las dependencias básicas:
+
+```cpp
+#include <glad/glad.h>    // Funciones OpenGL
+#include <GLFW/glfw3.h>   // Sistema de ventanas
+#include <glm/glm.hpp>    // Matemáticas (mínimo)
+#include <cmath>          // sin() para animación
+#include "logger.hpp"     // Logging básico
+```
+
+### Loop principal simplificado
+
+Estructura básica del render loop:
+
+```cpp
+while (!glfwWindowShouldClose(win)) {
+  // 1. Calcular tiempo
+  float time = static_cast<float>(glfwGetTime());
+  
+  // 2. Configurar viewport
+  glViewport(0, 0, w, h);
+  
+  // 3. Clear animado
+  glClearColor(r, g, b, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  
+  // 4. Swap y eventos
+  glfwSwapBuffers(win);
+  glfwPollEvents();
+}
+```
+
+### Limpieza de recursos
+
+Shutdown correcto:
+
+```cpp
+glfwTerminate();  // Liberar recursos GLFW
+return 0;
+```
+
+## Información de contexto
+
+### Logs informativos
+
+Sistema de logging para debug:
+
+```cpp
+LOG_INF("Starting OpenGL Window - Step 1: GLFW + Glad Context");
+LOG_INF("OpenGL Context: %s", glGetString(GL_VERSION));
+LOG_INF("GPU: %s", glGetString(GL_RENDERER));
+LOG_INF("Window initialized - animated clear color to test GPU rendering");
+```
+
+### Verificación de capacidades
+
+Información útil para debug:
+- **Versión OpenGL:** Confirma 4.1+ disponible
+- **GPU:** Identificar hardware gráfico
+- **Drivers:** Verificar compatibilidad
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Ventana abre sin errores | ✅ |
+| Clear color cambia suavemente | ✅ |
+| No hay tearing ni parpadeos | ✅ |
+| ESC cierra la aplicación | ✅ |
+| Redimensionado funciona correctamente | ✅ |
+| Logs muestran GPU y OpenGL version | ✅ |
+| Performance >60 FPS estable | ✅ |
+
+<Alert type="success">
+  **¡Contexto OpenGL funcionando!** Tu **GPU está renderizando** correctamente y el pipeline básico está establecido.
+</Alert>
+
+<Alert type="tip">
+  **Observa:** Los colores deben cambiar de forma fluida y cíclica. Si ves saltos o parpadeos, revisa drivers de GPU.
+</Alert>
+
+---
+
+## Siguiente: Objetos 3D
+
+Con el contexto OpenGL funcionando, el siguiente paso añade el **primer objeto 3D texturizado**.
+
+```bash
+git checkout v2-sun-texture
+``` 
