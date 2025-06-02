@@ -156,23 +156,23 @@ int main()
 
   // Visible solar system scales (all in marker units)
   Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f)); // 18mm radius → 3.6cm diameter (+20%)
-  sun.spinSpeed = glm::radians(15.f);                        // gentle spin
+  sun.localScale = glm::vec3(0.18f);  // Use localScale field
+  sun.spinSpeed = glm::radians(15.f);  // 3x faster: 5°/s → 15°/s
 
   Object earth{sphere, Texture("assets/earth.jpg")};
-  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f)); // 8mm radius → 1.6cm diameter (doubled!)
-  earth.spinSpeed = glm::radians(360.f / 24.f);
-  earth.orbitRadius = 0.4f;              // MUCH closer to Sun for demo (3.2cm instead of 9.6cm)
-  earth.orbitSpeed = glm::radians(15.f); // 1 orbit per ~24s
-  earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); // slightly tilted orbit for better lighting visibility
+  earth.localScale = glm::vec3(0.08f);  // Use localScale field
+  earth.spinSpeed = glm::radians(90.f);  // 3x faster: 30°/s → 90°/s
+  earth.orbitRadius = 0.4f;              
+  earth.orbitSpeed = glm::radians(24.f);  // 3x faster: 8°/s → 24°/s
+  earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); 
 
   Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); // 2mm radius → 4mm diameter (doubled!)
-  moon.spinSpeed = glm::radians(360.f / 27.3f);               // synchronous ≈ equal to translation
-  moon.orbitRadius = 0.08f;                                   // MUCH closer to Earth (6.4mm instead of 1.6cm)
-  moon.orbitSpeed = glm::radians(360.f / 27.3f);              // 27.3 d ≈ 1 sidereal month
-  moon.orbitTarget = &earth;                                  // key!
-  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));     // same slight tilt as Earth
+  moon.localScale = glm::vec3(0.02f);  // Use localScale field
+  moon.spinSpeed = glm::radians(60.f);  // 3x faster: 20°/s → 60°/s               
+  moon.orbitRadius = 0.12f;  // Increased distance from Earth (was 0.08f - too close!)                                   
+  moon.orbitSpeed = glm::radians(75.f);  // 3x faster: 25°/s → 75°/s              
+  moon.orbitTarget = &earth;                                  
+  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));
 
   LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.18f, 0.08f, 0.02f);
 

@@ -41,11 +41,11 @@ inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &ho
   
   ImGui::SeparatorText("Earth");
   float earthSpinDeg = glm::degrees(earth.spinSpeed);
-  if (ImGui::SliderFloat("Earth spin (deg/s)", &earthSpinDeg, 0.0f, 720.0f))
+  if (ImGui::SliderFloat("Earth spin (deg/s)", &earthSpinDeg, 0.0f, 180.0f))
     earth.spinSpeed = glm::radians(earthSpinDeg);
     
   float earthOrbitDeg = glm::degrees(earth.orbitSpeed);
-  if (ImGui::SliderFloat("Earth orbit (deg/s)", &earthOrbitDeg, 0.0f, 720.0f))
+  if (ImGui::SliderFloat("Earth orbit (deg/s)", &earthOrbitDeg, 0.0f, 60.0f))
     earth.orbitSpeed = glm::radians(earthOrbitDeg);
     
   ImGui::SliderFloat("Earth radius", &earth.orbitRadius, 0.05f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
@@ -61,14 +61,14 @@ inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &ho
   
   ImGui::SeparatorText("Moon");
   float moonSpinDeg = glm::degrees(moon.spinSpeed);
-  if (ImGui::SliderFloat("Moon spin (deg/s)", &moonSpinDeg, 0.0f, 720.0f))
+  if (ImGui::SliderFloat("Moon spin (deg/s)", &moonSpinDeg, 0.0f, 120.0f))
     moon.spinSpeed = glm::radians(moonSpinDeg);
     
   float moonOrbitDeg = glm::degrees(moon.orbitSpeed);
-  if (ImGui::SliderFloat("Moon orbit (deg/s)", &moonOrbitDeg, 0.0f, 720.0f))
+  if (ImGui::SliderFloat("Moon orbit (deg/s)", &moonOrbitDeg, 0.0f, 150.0f))
     moon.orbitSpeed = glm::radians(moonOrbitDeg);
     
-  ImGui::SliderFloat("Moon radius", &moon.orbitRadius, 0.02f, 1.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+  ImGui::SliderFloat("Moon radius", &moon.orbitRadius, 0.05f, 0.5f, "%.2f", ImGuiSliderFlags_Logarithmic);
   
   // Moon orbit axis control
   int moonAxis = moon.orbitAxis == glm::vec3(1,0,0) ? 0 : 
