@@ -1,0 +1,231 @@
+---
+id: "step5-solar-system"
+tag: "v5-solar-system"
+title: "Sistema Solar 3D"
+summary: "Agregamos Sol, Tierra y Luna con órbitas jerárquicas que flotan sobre el marcador ArUco detectado."
+durationMin: 15
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step5-solar-system"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v5-solar-system</code> → <code>git checkout v5-solar-system</code>.
+</Alert>
+
+---
+
+## Sistema Solar flotando en AR
+
+En este paso agregamos **objetos 3D del sistema solar** que flotan sobre el marcador ArUco. Partimos del tracking funcionando (v4) y añadimos contenido 3D real.
+
+### Objetos del sistema solar
+
+Creamos Sol, Tierra y Luna como objetos texturizados:
+
+```cpp
+#include "mesh.hpp"
+#include "texture.hpp" 
+#include "object.hpp"
+#include "scene.hpp"
+
+Mesh sphere = Mesh::sphere();
+
+// Sol - objeto central
+Object sun{sphere, Texture("assets/sun.jpg")};
+sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f));  // 18mm radio
+sun.spinSpeed = glm::radians(15.f);  // rotación lenta
+
+// Tierra - orbita alrededor del Sol
+Object earth{sphere, Texture("assets/earth.jpg")};
+earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f));  // 8mm radio
+earth.spinSpeed = glm::radians(360.f / 24.f);  // rotación diaria
+earth.orbitRadius = 0.4f;       // 4cm del Sol
+earth.orbitSpeed = glm::radians(15.f);  // 1 órbita por ~24s
+earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));  // órbita ligeramente inclinada
+
+// Luna - orbita alrededor de la Tierra
+Object moon{sphere, Texture("assets/moon.jpg")};
+moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f));  // 2mm radio
+moon.spinSpeed = glm::radians(360.f / 27.3f);  // rotación sincrónica
+moon.orbitRadius = 0.08f;       // 8mm de la Tierra
+moon.orbitSpeed = glm::radians(360.f / 27.3f);  // 27.3 días
+moon.orbitTarget = &earth;      // ¡CLAVE! Orbita la Tierra, no el Sol
+moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));  // misma inclinación
+```
+
+### Sistema de escena jerárquico
+
+Utilizamos la clase `Scene` para manejar las órbitas automáticamente:
+
+```cpp
+Scene scene;
+scene.add(&sun);    // Sol al centro
+scene.add(&earth);  // Tierra orbita el Sol
+scene.add(&moon);   // Luna orbita la Tierra (por orbitTarget)
+
+// En el loop principal:
+scene.update(dt, static_cast<float>(now));  // Actualiza todas las órbitas
+```
+
+### Posicionamiento sobre el marcador
+
+Transformamos todo el sistema para que flote sobre el marcador:
+
+```cpp
+// Parámetros fijos para demo consistente
+static const float HOVER_HEIGHT = 0.06f;  // 6mm sobre marcador
+static const float SYSTEM_SCALE = 0.3f;   // 30% del tamaño para mesas
+
+// Transformación completa
+glm::mat4 hover = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, +HOVER_HEIGHT)); 
+glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(SYSTEM_SCALE)); 
+glm::mat4 transform = hover * scaling;
+glm::mat4 VP = ar.proj() * ar.view() * transform;
+```
+
+### Renderizado con fade in/out
+
+Sistema suave de aparición cuando se detecta el marcador:
+
+```cpp
+static float alpha = 0.0f;
+
+// Fade in/out basado en detección del marcador
+alpha = ar.markerVisible() ? std::min(alpha + dt * 4.0f, 1.0f)
+                           : std::max(alpha - dt * 4.0f, 0.0f);
+
+if (ar.markerVisible() && alpha > 0.01f) {
+  scene.update(dt, static_cast<float>(now));
+  
+  // Alpha blending para efecto fade
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  
+  shader.use();
+  glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
+  
+  sun.draw(shader, VP);
+  earth.draw(shader, VP);
+  moon.draw(shader, VP);
+  
+  glDisable(GL_BLEND);
+}
+```
+
+### Shader básico para texturas
+
+Shader simple que aplica textura y alpha:
+
+```cpp
+static const char *VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 MVP;
+out vec2 vUV;
+void main(){ vUV=aUV; gl_Position=MVP*vec4(aPos,1.0); }
+)";
+
+static const char *FSHADER = R"(
+#version 410 core
+in vec2 vUV; 
+uniform sampler2D tex; 
+uniform float uAlpha;
+out vec4 FragColor;
+void main(){ 
+  FragColor = texture(tex, vUV);
+  FragColor.a *= uAlpha;  // Para fade in/out
+}
+)";
+```
+
+## Mecánicas orbitales
+
+### Ejes de órbita configurables
+
+Los planetas pueden tener órbitas en diferentes planos:
+
+```cpp
+// Órbitas planas (paralelas a la mesa)
+earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));  // mayormente +Z
+moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));   // misma inclinación
+
+// El objeto actualiza su posición orbital:
+void Object::update(float dt, float time) {
+  angle += orbitSpeed * dt;
+  if (orbitTarget) {
+    // Orbitar alrededor de otro objeto (Luna → Tierra)
+    position = orbitTarget->position + orbitRadius * orbital_calculation(angle, orbitAxis);
+  } else {
+    // Orbitar alrededor del origen (Tierra → Sol)
+    position = orbitRadius * orbital_calculation(angle, orbitAxis);
+  }
+}
+```
+
+### Escalas demo-friendly
+
+Tamaños y distancias optimizados para demostraciones:
+
+```cpp
+// Escalas visibles pero compactas
+Sun:   18mm radio → 3.6cm diámetro (muy visible)
+Earth: 8mm radio  → 1.6cm diámetro (claramente distinta del Sol)
+Moon:  2mm radio  → 4mm diámetro   (pequeña pero visible)
+
+// Distancias compactas para mesas
+Earth orbit: 4cm del Sol    (vs. realista 150M km)
+Moon orbit:  8mm de Tierra  (vs. realista 384k km)
+System scale: 30%           (cabe en mesas pequeñas)
+```
+
+### Velocidades apropiadas
+
+Velocidades que permiten ver el movimiento sin mareos:
+
+```cpp
+earth.orbitSpeed = glm::radians(15.f);      // 1 órbita completa en ~24 segundos
+moon.orbitSpeed = glm::radians(360.f / 27.3f); // Relativamente más lenta
+
+sun.spinSpeed = glm::radians(15.f);         // Rotación lenta y visible
+earth.spinSpeed = glm::radians(360.f / 24.f);  // Rotación diaria acelerada
+```
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Sol aparece en el centro, rotando lentamente | ✅ |
+| Tierra orbita alrededor del Sol | ✅ |
+| Luna orbita alrededor de la Tierra | ✅ |
+| Objetos aparecen/desaparecen con el marcador | ✅ |
+| Fade in/out funciona suavemente | ✅ |
+| Sistema completo flota sobre el marcador | ✅ |
+| Tamaños son claramente distinguibles | ✅ |
+| Performance >30 FPS con 3 objetos | ✅ |
+
+<Alert type="success">
+  **¡Sistema Solar AR completo!** Ahora tienes **Sol, Tierra y Luna** con órbitas realistas flotando sobre el marcador.  
+  El **sistema jerárquico** funciona correctamente con la Luna orbitando la Tierra.
+</Alert>
+
+<Alert type="tip">
+  **Observa cómo:** La Luna mantiene su distancia de la Tierra mientras ambos orbitan el Sol. ¡Mecánicas orbitales realistas!
+</Alert>
+
+---
+
+## Siguiente: Controles de Usuario
+
+Con el sistema solar funcionando, el siguiente paso añade **controles ImGui** para ajustar radios, velocidades y escalas en tiempo real.
+
+```bash
+git checkout v6-gui
+``` 
