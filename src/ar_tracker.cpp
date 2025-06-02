@@ -50,16 +50,30 @@ ARTracker::ARTracker(int camId, float len)
 
 glm::mat4 ARTracker::cvToGlm(const cv::Vec3d &rvec, const cv::Vec3d &tvec)
 {
-  cv::Mat R;
-  cv::Rodrigues(rvec, R);
-  glm::mat4 M(1.0f);
+  // OpenCV rotation → 3x3 matrix
+  cv::Mat Rcv;
+  cv::Rodrigues(rvec, Rcv);
+  
+  glm::mat4 T(1.0f);
+  // Copy rotation (column-major for GLM)
   for (int r = 0; r < 3; ++r)
     for (int c = 0; c < 3; ++c)
-      M[c][r] = (float)R.at<double>(r, c);
-  M[3][0] = (float)tvec[0];
-  M[3][1] = (float)tvec[1];
-  M[3][2] = (float)tvec[2];
-  return glm::inverse(M); // camera-to-world → view matrix
+      T[c][r] = static_cast<float>(Rcv.at<double>(r, c));
+  
+  // Translation
+  T[3][0] = static_cast<float>(tvec[0]);
+  T[3][1] = static_cast<float>(tvec[1]);
+  T[3][2] = static_cast<float>(tvec[2]);
+
+  // ---- Convert OpenCV(+Z) → OpenGL(-Z) coordinate system ----
+  const glm::mat4 cvToGl = glm::mat4( 1, 0, 0, 0,
+                                      0,-1, 0, 0,
+                                      0, 0,-1, 0,
+                                      0, 0, 0, 1 );
+
+  glm::mat4 markerToCamera = cvToGl * T; // already is view matrix
+
+  return markerToCamera;                 // NO glm::inverse() needed!
 }
 
 void ARTracker::uploadBackground()

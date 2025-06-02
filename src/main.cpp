@@ -94,26 +94,26 @@ int main()
 
   // Visible solar system scales (all in marker units)
   Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.15f));  // 15mm radius → 3cm diameter
+  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f));  // 18mm radius → 3.6cm diameter (+20%)
   sun.spinSpeed = glm::radians(15.f);                         // gentle spin
 
   Object earth{sphere, Texture("assets/earth.jpg")};
-  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.04f)); // 4mm radius → 8mm diameter
+  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f)); // 8mm radius → 1.6cm diameter (doubled!)
   earth.spinSpeed = glm::radians(360.f / 24.f);
-  earth.orbitRadius = 0.8f;                                    // 6.4cm from Sun
+  earth.orbitRadius = 1.2f;                                    // 9.6cm from Sun (larger orbit)
   earth.orbitSpeed = glm::radians(15.f);                       // 1 orbit per ~24s
 
   Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)); // 1mm radius → 2mm diameter  
+  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); // 2mm radius → 4mm diameter (doubled!)
   moon.spinSpeed = glm::radians(360.f / 27.3f);                // synchronous ≈ equal to translation
-  moon.orbitRadius = 0.15f;                                    // 1.2cm from Earth
+  moon.orbitRadius = 0.20f;                                    // 1.6cm from Earth (larger orbit)
   moon.orbitSpeed = glm::radians(360.f / 27.3f);               // 27.3 d ≈ 1 sidereal month
   moon.orbitTarget = &earth;                                   // key!
 
-  LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.15f, 0.04f, 0.01f);
+  LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.18f, 0.08f, 0.02f);
 
   Scene scene;
-  scene.add(&sun);
+  scene.add(&sun);     // put them back so scene.update() moves them
   scene.add(&earth);
   scene.add(&moon);
 
@@ -195,15 +195,33 @@ int main()
 
     // ---- update & draw solar system (only when marker visible and alpha > 0) ----
     if (ar.markerVisible() && alpha > 0.01f) {
+      // Debug: Check if sun is in front of camera
+      static int debugCounter = 0;
+      if (++debugCounter % 60 == 0) { // every 2 seconds at 30fps
+        glm::vec4 sunViewPos = ar.view() * glm::vec4(0, 0, 0, 1);
+        glm::vec4 earthViewPos = ar.view() * earth.model * glm::vec4(0, 0, 0, 1);
+        LOG_INF("Sun in view space: (%.3f, %.3f, %.3f)", sunViewPos.x, sunViewPos.y, sunViewPos.z);
+        LOG_INF("Earth in view space: (%.3f, %.3f, %.3f)", earthViewPos.x, earthViewPos.y, earthViewPos.z);
+        LOG_INF("Earth orbit radius: %.3f (should change over time)", earth.orbitRadius);
+      }
+      
       scene.update(dt, static_cast<float>(now));
+      glm::mat4 VP = ar.proj() * ar.view();
       
       // Enable alpha blending for fade effect
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      
       shader.use();
       glUniform1f(glGetUniformLocation(shader.id(), "uAlpha"), alpha);
-      scene.draw(shader, ar.proj() * ar.view());
+      
+      // 1) Draw planets first (Earth and Moon)
+      earth.draw(shader, VP);
+      moon.draw(shader, VP);
+      
+      // 2) Draw Sun last with depth write OFF (so it doesn't hide planets)
+      glDepthMask(GL_FALSE);
+      sun.draw(shader, VP);
+      glDepthMask(GL_TRUE);
       
       glDisable(GL_BLEND);
       LOG_DBG("Drew solar system with alpha %.2f", alpha);
