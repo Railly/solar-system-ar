@@ -94,23 +94,23 @@ int main()
 
   // Solar system with basic rendering (no complex lighting)
   Object sun{sphere, Texture("assets/sun.jpg")};
-  sun.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.18f)); 
-  sun.spinSpeed = glm::radians(15.f);                        
+  sun.localScale = glm::vec3(0.18f);  // Use localScale field
+  sun.spinSpeed = glm::radians(15.f);  // 3x faster: 5°/s → 15°/s                       
 
   Object earth{sphere, Texture("assets/earth.jpg")};
-  earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f)); 
-  earth.spinSpeed = glm::radians(360.f / 24.f);
+  earth.localScale = glm::vec3(0.08f);  // Use localScale field
+  earth.spinSpeed = glm::radians(90.f);  // 3x faster: 30°/s → 90°/s
   earth.orbitRadius = 0.4f;              
-  earth.orbitSpeed = glm::radians(15.f); 
+  earth.orbitSpeed = glm::radians(24.f);  // 3x faster: 8°/s → 24°/s
   earth.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1)); 
 
   Object moon{sphere, Texture("assets/moon.jpg")};
-  moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); 
-  moon.spinSpeed = glm::radians(360.f / 27.3f);               
-  moon.orbitRadius = 0.08f;                                   
-  moon.orbitSpeed = glm::radians(360.f / 27.3f);              
+  moon.localScale = glm::vec3(0.02f);  // Use localScale field
+  moon.spinSpeed = glm::radians(60.f);  // 3x faster: 20°/s → 60°/s               
+  moon.orbitRadius = 0.12f;  // Increased distance from Earth (was 0.08f - too close!)                                   
+  moon.orbitSpeed = glm::radians(75.f);  // 3x faster: 25°/s → 75°/s              
   moon.orbitTarget = &earth;                                  
-  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));     
+  moon.orbitAxis = glm::normalize(glm::vec3(0.1f, 0, 1));
 
   LOG_INF("Solar system created with basic rendering");
 
@@ -171,7 +171,7 @@ int main()
 
     gui.begin();
     // Simplified UI panel without lighting controls
-    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, gSystemScale, gSystemScale, &showUI); // reuse scale param
+    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, &showUI);
 
     // Debug feedback when no marker detected
     if (!ar.markerVisible())

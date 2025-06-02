@@ -11,14 +11,19 @@ struct Object
   Texture tex;
   glm::mat4 model{1.0f};
 
+  // Scale properties
+  glm::vec3 localScale{1.0f};
+
   // Rotation properties
   glm::vec3 axis{0, 1, 0};
   float spinSpeed = 0.0f; // rad/sec
+  float spinAngle = 0.0f; // accumulated spin angle
 
   // Orbital properties
   glm::vec3 orbitCenter{0};
   float orbitRadius = 0.0f;
   float orbitSpeed = 0.0f; // rad/sec
+  float orbitAngle = 0.0f; // accumulated orbit angle
   glm::vec3 orbitAxis{0, 1, 0}; // axis around which to orbit (default Y-axis)
   const Object *orbitTarget = nullptr;
 
