@@ -1,0 +1,211 @@
+---
+id: "step4-ar-marker"
+tag: "v4-ar-marker"
+title: "ArUco Marker + View/Proj"
+summary: "OpenCV detecta el marcador y convertimos rvec/tvec a vista GL. Mostramos ejes 3D gruesos para confirmar tracking."
+durationMin: 20
+author: "Railly Hugo"
+authorImageUrl: "/hugo-profile.webp"
+pubDate: "2025-06-04"
+files: []
+path: "workshop/step4-ar-marker"
+---
+
+import Alert     from "../../components/Alert.astro";
+import StepGuide from "../../components/StepGuide.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+
+<Alert type="info">
+  **Tag del repo:** <code>v4-ar-marker</code> → <code>git checkout v4-ar-marker</code>.
+</Alert>
+
+---
+
+## Detección de marcadores AR
+
+En este paso implementamos **detección ArUco** con OpenCV y mostramos **ejes 3D gruesos** para confirmar que el tracking funciona correctamente.
+
+### Integración ARTracker
+
+La clase `ARTracker` maneja automáticamente la detección de marcadores:
+
+```cpp
+ARTracker ar;
+
+// En el loop principal:
+ar.grabFrame();  // Captura frame + detecta marcadores
+
+// Verificar detección
+if (ar.markerVisible()) {
+  // Marker ID 0 detectado - mostrar ejes 3D
+  glm::mat4 VP = ar.proj() * ar.view();  // Matrices de cámara real
+}
+```
+
+### Feedback de detección
+
+Sistema de logging para confirmar que el tracking funciona:
+
+```cpp
+static bool markerDetectedBefore = false;
+
+if (ar.markerVisible() && !markerDetectedBefore) {
+  LOG_INF("🎯 MARKER DETECTED! ID 0 - showing THICK 3D axes");
+  markerDetectedBefore = true;
+} else if (!ar.markerVisible() && markerDetectedBefore) {
+  LOG_INF("❌ Marker lost - point camera back at ArUco marker");
+  markerDetectedBefore = false;
+}
+```
+
+### Ejes 3D gruesos (cilindros)
+
+En lugar de líneas finas, usamos **cilindros 3D** para máxima visibilidad:
+
+```cpp
+// Crear geometría de cilindro grueso
+float axisRadius = 0.003f;  // 3mm de radio - muy visible!
+float axisLength = 0.05f;   // 5cm de largo
+AxisGeometry thickAxis = createThickAxis(axisRadius, axisLength, 8);
+```
+
+### Generación de geometría cilíndrica
+
+Función para crear cilindros proceduralmente:
+
+```cpp
+AxisGeometry createThickAxis(float radius, float length, int segments = 8) {
+  std::vector<float> vertices;
+  std::vector<unsigned int> indices;
+  
+  // Crear cilindro a lo largo del eje Z (0,0,0) → (0,0,length)
+  for (int i = 0; i <= segments; i++) {
+    float theta = 2.0f * M_PI * i / segments;
+    float x = radius * cos(theta);
+    float y = radius * sin(theta);
+    
+    // Círculo inferior (z=0)
+    vertices.insert(vertices.end(), {x, y, 0.0f});
+    // Círculo superior (z=length)  
+    vertices.insert(vertices.end(), {x, y, length});
+  }
+  
+  // Generar índices para los lados del cilindro
+  for (int i = 0; i < segments; i++) {
+    // Dos triángulos por quad lateral
+    indices.insert(indices.end(), {bottom1, top1, bottom2});
+    indices.insert(indices.end(), {bottom2, top1, top2});
+  }
+}
+```
+
+### Renderizado de ejes XYZ
+
+Cada eje se renderiza como un cilindro rotado apropiadamente:
+
+```cpp
+// X axis - Rojo (rotar cilindro Z hacia +X)
+glm::mat4 xTransform = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0, 1, 0));
+glm::mat4 xMVP = VP * xTransform;
+glUniform3f(glGetUniformLocation(axisShader.id(), "uColor"), 1.0f, 0.0f, 0.0f);
+glUniformMatrix4fv(glGetUniformLocation(axisShader.id(), "MVP"), 1, GL_FALSE, &xMVP[0][0]);
+glDrawElements(GL_TRIANGLES, thickAxis.indexCount, GL_UNSIGNED_INT, 0);
+
+// Y axis - Verde (rotar cilindro Z hacia +Y)
+glm::mat4 yTransform = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1, 0, 0));
+// ... similar para Y y Z
+```
+
+### Shaders para ejes
+
+Shaders simples para renderizar cilindros de color sólido:
+
+```cpp
+static const char *AXIS_VSHADER = R"(
+#version 410 core
+layout(location=0) in vec3 aPos;
+uniform mat4 MVP;
+void main(){ gl_Position = MVP * vec4(aPos, 1.0); }
+)";
+
+static const char *AXIS_FSHADER = R"(
+#version 410 core
+uniform vec3 uColor;
+out vec4 FragColor;
+void main(){ FragColor = vec4(uColor, 1.0); }
+)";
+```
+
+### Ventajas de los cilindros gruesos
+
+**vs. glLineWidth():**
+- ✅ **Sin limitaciones** de OpenGL Core Profile
+- ✅ **Grosor garantizado** (3mm de radio = 6mm de diámetro)
+- ✅ **Visible desde cualquier ángulo**
+- ✅ **Futuro-compatible** para efectos adicionales
+
+**Código vs. líneas finas:**
+```cpp
+// ❌ Líneas finas (limitadas a 1px en macOS)
+glLineWidth(3.0f);  // Ignorado en Core Profile
+glDrawArrays(GL_LINES, 0, 2);
+
+// ✅ Cilindros gruesos (sin limitaciones)
+glDrawElements(GL_TRIANGLES, thickAxis.indexCount, GL_UNSIGNED_INT, 0);
+```
+
+### Debug de pose del marcador
+
+Logging periódico de la posición del marcador:
+
+```cpp
+static int poseDebugCounter = 0;
+if (++poseDebugCounter % 60 == 0) { // cada 2 segundos
+  glm::mat4 view = ar.view();
+  glm::vec3 markerPos = glm::vec3(view[3]); // parte de traslación
+  LOG_INF("Marker ID 0 pose - position: (%.3f, %.3f, %.3f) - THICK axes visible!", 
+          markerPos.x, markerPos.y, markerPos.z);
+}
+```
+
+## Interpretación de los ejes
+
+### Sistema de coordenadas ArUco
+- **X (rojo)**: Hacia la derecha del marcador
+- **Y (verde)**: Hacia arriba del marcador  
+- **Z (azul)**: Saliendo del marcador hacia la cámara
+
+### Verificación visual
+- Los ejes deben **permanecer fijos** al marcador
+- **No deben temblar** excesivamente
+- **Colores claros** y **grosor visible** desde 30-50cm
+
+## Checklist de validación
+
+| Ítem | OK |
+|------|----|
+| Cámara muestra video en tiempo real | ✅ |
+| ArUco marker ID 0 se detecta correctamente | ✅ |
+| Ejes 3D aparecen/desaparecen con el marcador | ✅ |
+| Ejes son gruesos y claramente visibles | ✅ |
+| X=rojo, Y=verde, Z=azul identificables | ✅ |
+| Tracking estable sin temblores excesivos | ✅ |
+
+<Alert type="success">
+  **¡Tracking AR funcionando!** Los **ejes gruesos 3D** confirman que la detección y pose estimation funcionan correctamente.  
+  El sistema está listo para agregar objetos 3D que floten sobre el marcador.
+</Alert>
+
+<Alert type="tip">
+  **Para mejor tracking:** buena iluminación, marcador plano, cámara estable, y distancia 30-50cm del marcador.
+</Alert>
+
+---
+
+## Siguiente: 3D Solar System
+
+Con el tracking AR funcionando perfectamente, el siguiente paso añade el **sistema solar 3D** que flota sobre el marcador.
+
+```bash
+git checkout v5-background
+``` 
