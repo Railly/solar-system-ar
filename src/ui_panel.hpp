@@ -2,29 +2,64 @@
 #include "object.hpp"
 #include <imgui.h>
 
-inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &hover, bool *show = nullptr)
+inline void drawOrbitalPanel(Object &sun, Object &earth, Object &moon, float &hover, float &systemScale, bool *show = nullptr)
 {
   if (show && !*show)
     return;
   ImGui::Begin("Orbital Control", show);
   
-  ImGui::SeparatorText("System Position");
-  ImGui::SliderFloat("Height above tablet", &hover, 0.05f, 0.50f, "%.2f units");
+  ImGui::SeparatorText("System Settings");
+  ImGui::SliderFloat("Height above tablet", &hover, 0.02f, 0.20f, "%.2f units");
   ImGui::SameLine();
   ImGui::TextDisabled("(away from surface)");
   
+  ImGui::SliderFloat("System Scale", &systemScale, 0.1f, 1.0f, "%.2f×", ImGuiSliderFlags_Logarithmic);
+  ImGui::SameLine();
+  ImGui::TextDisabled("(smaller/larger)");
+  
   ImGui::SeparatorText("Sun");
-  ImGui::SliderFloat("Sun spin", &sun.spinSpeed, 0.0f, glm::radians(60.f));
+  float sunDeg = glm::degrees(sun.spinSpeed);
+  if (ImGui::SliderFloat("Sun spin (deg/s)", &sunDeg, 0.0f, 60.0f))
+    sun.spinSpeed = glm::radians(sunDeg);
   
   ImGui::SeparatorText("Earth");
-  ImGui::SliderFloat("Earth spin", &earth.spinSpeed, 0.0f, glm::radians(720.f));
-  ImGui::SliderFloat("Earth orbit", &earth.orbitSpeed, 0.0f, glm::radians(720.f));
-  ImGui::SliderFloat("Earth radius", &earth.orbitRadius, 1.0f, 10.0f);
+  float earthSpinDeg = glm::degrees(earth.spinSpeed);
+  if (ImGui::SliderFloat("Earth spin (deg/s)", &earthSpinDeg, 0.0f, 720.0f))
+    earth.spinSpeed = glm::radians(earthSpinDeg);
+    
+  float earthOrbitDeg = glm::degrees(earth.orbitSpeed);
+  if (ImGui::SliderFloat("Earth orbit (deg/s)", &earthOrbitDeg, 0.0f, 720.0f))
+    earth.orbitSpeed = glm::radians(earthOrbitDeg);
+    
+  ImGui::SliderFloat("Earth radius", &earth.orbitRadius, 0.05f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+  
+  // Orbit axis control
+  static const char* axes[] = {"X", "Y", "Z"};
+  int earthAxis = earth.orbitAxis == glm::vec3(1,0,0) ? 0 : 
+                  earth.orbitAxis == glm::vec3(0,1,0) ? 1 : 2;
+  if (ImGui::Combo("Earth orbit axis", &earthAxis, axes, 3)) {
+    earth.orbitAxis = earthAxis == 0 ? glm::vec3(1,0,0) :
+                      earthAxis == 1 ? glm::vec3(0,1,0) : glm::vec3(0,0,1);
+  }
   
   ImGui::SeparatorText("Moon");
-  ImGui::SliderFloat("Moon spin", &moon.spinSpeed, 0.0f, glm::radians(720.f));
-  ImGui::SliderFloat("Moon orbit", &moon.orbitSpeed, 0.0f, glm::radians(720.f));
-  ImGui::SliderFloat("Moon radius", &moon.orbitRadius, 0.1f, 2.0f);
+  float moonSpinDeg = glm::degrees(moon.spinSpeed);
+  if (ImGui::SliderFloat("Moon spin (deg/s)", &moonSpinDeg, 0.0f, 720.0f))
+    moon.spinSpeed = glm::radians(moonSpinDeg);
+    
+  float moonOrbitDeg = glm::degrees(moon.orbitSpeed);
+  if (ImGui::SliderFloat("Moon orbit (deg/s)", &moonOrbitDeg, 0.0f, 720.0f))
+    moon.orbitSpeed = glm::radians(moonOrbitDeg);
+    
+  ImGui::SliderFloat("Moon radius", &moon.orbitRadius, 0.02f, 1.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+  
+  // Moon orbit axis control
+  int moonAxis = moon.orbitAxis == glm::vec3(1,0,0) ? 0 : 
+                 moon.orbitAxis == glm::vec3(0,1,0) ? 1 : 2;
+  if (ImGui::Combo("Moon orbit axis", &moonAxis, axes, 3)) {
+    moon.orbitAxis = moonAxis == 0 ? glm::vec3(1,0,0) :
+                     moonAxis == 1 ? glm::vec3(0,1,0) : glm::vec3(0,0,1);
+  }
   
   ImGui::End();
 }

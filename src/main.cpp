@@ -100,15 +100,17 @@ int main()
   Object earth{sphere, Texture("assets/earth.jpg")};
   earth.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.08f)); // 8mm radius → 1.6cm diameter (doubled!)
   earth.spinSpeed = glm::radians(360.f / 24.f);
-  earth.orbitRadius = 1.2f;              // 9.6cm from Sun (larger orbit)
+  earth.orbitRadius = 0.4f;              // MUCH closer to Sun for demo (3.2cm instead of 9.6cm)
   earth.orbitSpeed = glm::radians(15.f); // 1 orbit per ~24s
+  earth.orbitAxis = glm::vec3(0, 0, 1);  // flat orbit around Z-axis (parallel to table)
 
   Object moon{sphere, Texture("assets/moon.jpg")};
   moon.model = glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)); // 2mm radius → 4mm diameter (doubled!)
   moon.spinSpeed = glm::radians(360.f / 27.3f);               // synchronous ≈ equal to translation
-  moon.orbitRadius = 0.20f;                                   // 1.6cm from Earth (larger orbit)
+  moon.orbitRadius = 0.08f;                                   // MUCH closer to Earth (6.4mm instead of 1.6cm)
   moon.orbitSpeed = glm::radians(360.f / 27.3f);              // 27.3 d ≈ 1 sidereal month
   moon.orbitTarget = &earth;                                  // key!
+  moon.orbitAxis = glm::vec3(0, 0, 1);                        // flat orbit around Z-axis (same as Earth)
 
   LOG_INF("Solar system created - Sun:%.3f Earth:%.3f Moon:%.3f", 0.18f, 0.08f, 0.02f);
 
@@ -126,7 +128,8 @@ int main()
   ARTracker ar;
   bool showUI = true;
   static float alpha = 0.0f;   // for smooth fade in/out
-  static float gHover = 0.25f; // hover height above marker (in marker units)
+  static float gHover = 0.06f; // hover height above marker (closer to tablet for demo)
+  static float gSystemScale = 0.3f; // smaller system by default for demo
 
   // FPS logging
   static double fpsTimer = 0;
@@ -166,7 +169,7 @@ int main()
                                : std::max(alpha - dt * 4.0f, 0.0f);
 
     gui.begin();
-    drawOrbitalPanel(sun, earth, moon, gHover, &showUI);
+    drawOrbitalPanel(sun, earth, moon, gHover, gSystemScale, &showUI);
 
     // Debug feedback when no marker detected
     if (!ar.markerVisible())
@@ -221,7 +224,8 @@ int main()
       // Move entire system above marker along its +Z axis (away from tablet surface)
       glm::mat4 hover = glm::translate(glm::mat4(1.0f),
                                        glm::vec3(0, 0, +gHover)); // POSITIVE = above tablet
-      glm::mat4 VP = ar.proj() * ar.view() * hover;
+      glm::mat4 scaling = glm::scale(glm::mat4(1.0f), glm::vec3(gSystemScale)); // global scale
+      glm::mat4 VP = ar.proj() * ar.view() * hover * scaling;
 
       // Enable alpha blending for fade effect
       glEnable(GL_BLEND);
